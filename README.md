@@ -4,7 +4,7 @@ An interactive operational map for salesperson territories and dealer locations 
 
 ## Current Status
 
-The app is a review prototype. Dealer pins are real PIN-centroid approximations, while colored 12 km circles are placeholders—not official territory boundaries. New entries are stored in the current browser only.
+The app is a review prototype. Dealer pins use PIN-centroid approximations and salesperson colors now fill PIN-code boundary polygons. Unassigned geography remains grey. New entries are stored in the current browser only.
 
 Private review deployment: [dealer-territory-map-ap-ts.nikanjuri.chatgpt.site](https://dealer-territory-map-ap-ts.nikanjuri.chatgpt.site)
 
@@ -53,6 +53,7 @@ Choose Telangana or Andhra Pradesh for the uploaded file. The prototype accepts 
 - Tailwind CSS and local shadcn-derived UI primitives
 - MapLibre GL with OpenStreetMap raster tiles
 - Local GeoJSON outlines for Telangana and Andhra Pradesh
+- Local PIN-boundary polygons for all nine sample PINs, with on-demand boundary lookup for newly added PINs
 - SheetJS for browser-side spreadsheet parsing
 - Nominatim for low-volume prototype PIN geocoding
 - Browser local storage for temporary persistence
@@ -63,9 +64,11 @@ The future shared model should separate dealers, salespeople, approved territory
 ## Territory Semantics
 
 - Grey means unassigned only when the complete boundary set is available.
-- Salesperson colors must fill approved polygons—not arbitrary proximity circles.
+- Salesperson colors fill PIN-code polygons in the current model.
 - PIN, district/mandal, and custom-drawn territories are different models and must not be mixed without a documented rule.
-- The supplied sample contains a PIN shared by two area rows, so one-owner-per-PIN behavior requires a business decision.
+- The supplied sample contains two Chander dealer rows in PIN `500004`; they intentionally render as one Chander-owned polygon unless the business assignment changes.
+
+Boundary provenance and limitations are recorded in `docs/data-sources.md`.
 
 ## Project Documents
 

@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Prototype validation and territory-model definition.
+PIN-boundary prototype validation and territory-model refinement.
 
 ## Completed
 
@@ -16,16 +16,18 @@ Prototype validation and territory-model definition.
 - [x] Flag three questionable PIN/area values from the sample.
 - [x] Verify the prototype at desktop and mobile sizes.
 - [x] Publish a private review deployment through Sites.
+- [x] Replace radius-based coverage circles with PIN-code boundary polygons for all nine sample PINs.
+- [x] Load additional PIN boundaries on demand when new dealer PINs are added or imported.
 
 ## Current Objective
 
-Replace approximate 12 km PIN-centroid circles with approved territory polygons so salesperson coverage and grey gaps are geographically meaningful.
+Validate PIN-level salesperson ownership across a broader Telangana and Andhra Pradesh dataset before introducing shared persistence.
 
 ## Next Work
 
-- [ ] Decide whether territory ownership follows PIN boundaries, districts/mandals, or manager-drawn polygons.
-- [ ] Resolve the two dealer rows that share PIN `500004` before enforcing one owner per PIN.
-- [ ] Source and license the chosen boundary dataset for both states.
+- [x] Use PIN boundaries as the initial territory model.
+- [x] Record the boundary source and license provenance.
+- [ ] Confirm whether the two `500004` dealer areas intentionally share one Chander-owned PIN territory.
 - [ ] Build an assignment editor with explicit unassigned-area handling.
 - [ ] Add Andhra Pradesh sample rows and verify cross-state behavior.
 - [ ] Decide the shared data authority and role model before adding a backend.
@@ -40,15 +42,15 @@ Replace approximate 12 km PIN-centroid circles with approved territory polygons 
 - [x] Excel import accepts the supplied sample and rejects duplicate rows.
 - [x] WebMCP list/add tools handle valid and invalid input.
 - [x] Port `5740` is registered and matches package scripts and docs.
-- [ ] Territory polygons are visually reviewed against a trusted boundary source.
+- [ ] Territory polygons are visually reviewed against business expectations for the sample areas.
 - [ ] Keyboard, focus, contrast, touch targets, reduced motion, empty states, and error states receive a complete accessibility pass.
 - [ ] A shared backend, if selected, is tested locally before any remote migration.
 - [ ] Preview and production deployments are reverified after territory-model changes.
 
 ## Risks
 
-- PIN centroids are not territory boundaries; the current circles can overstate or understate coverage.
-- One PIN appears in two different area records, so PIN-level ownership needs a conflict rule.
+- Published PIN polygons are a starting model and may differ from the sales team's operational territories.
+- One PIN appears in two area records assigned to the same salesperson; both dealers share one colored polygon.
 - The sample has no Andhra Pradesh dealers and cannot validate real AP assignments.
 - Nominatim is suitable for light prototype geocoding, not unrestricted bulk production use.
 - Browser local storage is neither shared nor auditable.

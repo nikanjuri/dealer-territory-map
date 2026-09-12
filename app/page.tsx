@@ -55,10 +55,22 @@ type MapData = {
   type: "FeatureCollection";
   features: Array<{
     type: "Feature";
-    properties: Record<string, string | number | boolean>;
+    properties: Record<string, string | number | boolean | null>;
     geometry: {
-      type: "Point" | "Polygon";
-      coordinates: number[] | number[][][];
+      type: "Point" | "Polygon" | "MultiPolygon";
+      coordinates: number[] | number[][][] | number[][][][];
+    };
+  }>;
+};
+
+type PincodeBoundaryData = {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    properties: Record<string, string | number | boolean | null>;
+    geometry: {
+      type: "Polygon" | "MultiPolygon";
+      coordinates: number[][][] | number[][][][];
     };
   }>;
 };
@@ -87,6 +99,30 @@ const PIN_COORDINATES: Record<string, [number, number]> = Object.fromEntries(
   ]),
 );
 
+const PIN_BOUNDARY_SERVICE =
+  "https://livingatlas.esri.in/server1/rest/services/India/Pincode_Boundary_2025/MapServer/0/query";
+
+async function fetchPincodeBoundaries(
+  pincodes: string[],
+  signal?: AbortSignal,
+): Promise<PincodeBoundaryData> {
+  const safePincodes = [...new Set(pincodes.filter((pin) => /^\d{6}$/.test(pin)))];
+  if (!safePincodes.length) return { type: "FeatureCollection", features: [] };
+  const parameters = new URLSearchParams({
+    where:
+      "pin_code IN (" + safePincodes.map((pin) => `'${pin}'`).join(",") + ")",
+    outFields: "pin_code,fname,state,circle,region,division",
+    returnGeometry: "true",
+    outSR: "4326",
+    f: "geojson",
+  });
+  const response = await fetch(PIN_BOUNDARY_SERVICE + "?" + parameters, {
+    signal,
+  });
+  if (!response.ok) throw new Error("PIN boundaries could not be loaded.");
+  return (await response.json()) as PincodeBoundaryData;
+}
+
 async function geocodePincode(
   pincode: string,
   state: Dealer["state"],
@@ -102,40 +138,48 @@ async function geocodePincode(
   return match ? [Number(match.lon), Number(match.lat)] : null;
 }
 
-function circlePolygon(
-  longitude: number,
-  latitude: number,
-  radiusKm: number,
-  properties: Record<string, string | number | boolean>,
-) {
-  const coordinates: number[][] = [];
-  const latScale = radiusKm / 110.574;
-  const lonScale = radiusKm / (111.32 * Math.cos((latitude * Math.PI) / 180));
-  for (let step = 0; step <= 48; step += 1) {
-    const angle = (step / 48) * Math.PI * 2;
-    coordinates.push([
-      longitude + Math.cos(angle) * lonScale,
-      latitude + Math.sin(angle) * latScale,
+function makeCoverageData(
+  boundaries: PincodeBoundaryData | null,
+  dealers: Dealer[],
+): MapData {
+  const dealersByPincode = new Map<string, Dealer[]>();
+  for (const dealer of dealers) {
+    dealersByPincode.set(dealer.pincode, [
+      ...(dealersByPincode.get(dealer.pincode) ?? []),
+      dealer,
     ]);
   }
-  return {
-    type: "Feature" as const,
-    properties,
-    geometry: { type: "Polygon" as const, coordinates: [coordinates] },
-  };
-}
 
-function makeCoverageData(dealers: Dealer[]): MapData {
   return {
     type: "FeatureCollection",
-    features: dealers.map((dealer) =>
-      circlePolygon(dealer.longitude, dealer.latitude, 12, {
-        id: dealer.id,
-        color: getSalespersonColor(dealer.salesperson),
-        salesperson: dealer.salesperson,
-        area: dealer.area,
-      }),
-    ),
+    features: (boundaries?.features ?? []).flatMap((boundary) => {
+      const pincode = String(boundary.properties.pin_code ?? "");
+      const assignedDealers = dealersByPincode.get(pincode) ?? [];
+      if (!assignedDealers.length) return [];
+      const salespeople = [
+        ...new Set(assignedDealers.map((dealer) => dealer.salesperson)),
+      ];
+      const conflict = salespeople.length > 1;
+      const salesperson = conflict ? "Multiple salespeople" : salespeople[0];
+      const color = conflict ? "#7d8582" : getSalespersonColor(salesperson);
+      return [
+        {
+          ...boundary,
+          properties: {
+            ...boundary.properties,
+            pincode,
+            salesperson,
+            color,
+            outlineColor: conflict ? "#b45309" : color,
+            conflict,
+            dealerCount: assignedDealers.length,
+            areas: [...new Set(assignedDealers.map((dealer) => dealer.area))].join(
+              " · ",
+            ),
+          },
+        },
+      ];
+    }),
   };
 }
 
@@ -161,6 +205,38 @@ function makeDealerData(dealers: Dealer[]): MapData {
   };
 }
 
+function getCoverageBounds(
+  coverage: MapData,
+): [[number, number], [number, number]] | null {
+  let west = Number.POSITIVE_INFINITY;
+  let south = Number.POSITIVE_INFINITY;
+  let east = Number.NEGATIVE_INFINITY;
+  let north = Number.NEGATIVE_INFINITY;
+
+  const visit = (value: unknown) => {
+    if (
+      Array.isArray(value) &&
+      value.length >= 2 &&
+      typeof value[0] === "number" &&
+      typeof value[1] === "number"
+    ) {
+      west = Math.min(west, value[0]);
+      south = Math.min(south, value[1]);
+      east = Math.max(east, value[0]);
+      north = Math.max(north, value[1]);
+      return;
+    }
+    if (Array.isArray(value)) value.forEach(visit);
+  };
+
+  coverage.features.forEach((feature) => visit(feature.geometry.coordinates));
+  if (![west, south, east, north].every(Number.isFinite)) return null;
+  return [
+    [west, south],
+    [east, north],
+  ];
+}
+
 function TerritoryMap({
   dealers,
   selectedId,
@@ -175,11 +251,81 @@ function TerritoryMap({
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const onSelectRef = useRef(onSelect);
+  const dealersRef = useRef(dealers);
+  const fittedInitialCoverageRef = useRef(false);
+  const unavailablePinsRef = useRef(new Set<string>());
   const [ready, setReady] = useState(false);
+  const [boundariesLoaded, setBoundariesLoaded] = useState(false);
+  const [boundaries, setBoundaries] = useState<PincodeBoundaryData | null>(null);
 
   useEffect(() => {
     onSelectRef.current = onSelect;
   }, [onSelect]);
+
+  useEffect(() => {
+    dealersRef.current = dealers;
+  }, [dealers]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/pincode-boundaries.geojson", { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error("Initial PIN boundaries failed to load.");
+        return response.json() as Promise<PincodeBoundaryData>;
+      })
+      .then((data) => setBoundaries(data))
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        toast.error("PIN-code boundaries could not be loaded.");
+      })
+      .finally(() => setBoundariesLoaded(true));
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    if (!boundariesLoaded) return;
+    const knownPins = new Set(
+      (boundaries?.features ?? []).map((feature) =>
+        String(feature.properties.pin_code ?? ""),
+      ),
+    );
+    const missingPins = [
+      ...new Set(
+        dealers
+          .map((dealer) => dealer.pincode)
+          .filter(
+            (pincode) =>
+              !knownPins.has(pincode) &&
+              !unavailablePinsRef.current.has(pincode),
+          ),
+      ),
+    ];
+    if (!missingPins.length) return;
+
+    const controller = new AbortController();
+    void fetchPincodeBoundaries(missingPins, controller.signal)
+      .then((incoming) => {
+        const returnedPins = new Set(
+          incoming.features.map((feature) =>
+            String(feature.properties.pin_code ?? ""),
+          ),
+        );
+        for (const pincode of missingPins) {
+          if (!returnedPins.has(pincode)) unavailablePinsRef.current.add(pincode);
+        }
+        if (!incoming.features.length) return;
+        setBoundaries((current) => ({
+          type: "FeatureCollection",
+          features: [...(current?.features ?? []), ...incoming.features],
+        }));
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        for (const pincode of missingPins) unavailablePinsRef.current.add(pincode);
+        toast.error("A new PIN boundary could not be loaded.");
+      });
+    return () => controller.abort();
+  }, [boundaries, boundariesLoaded, dealers]);
 
   useEffect(() => {
     let active = true;
@@ -241,7 +387,7 @@ function TerritoryMap({
         });
         map?.addSource("coverage", {
           type: "geojson",
-          data: makeCoverageData([]) as never,
+          data: makeCoverageData(null, []) as never,
         });
         map?.addLayer({
           id: "coverage-fill",
@@ -249,7 +395,7 @@ function TerritoryMap({
           source: "coverage",
           paint: {
             "fill-color": ["get", "color"],
-            "fill-opacity": 0.34,
+            "fill-opacity": 0.5,
           },
         });
         map?.addLayer({
@@ -257,10 +403,23 @@ function TerritoryMap({
           type: "line",
           source: "coverage",
           paint: {
-            "line-color": ["get", "color"],
-            "line-width": 1.8,
-            "line-opacity": 0.9,
+            "line-color": ["get", "outlineColor"],
+            "line-width": 2,
+            "line-opacity": 0.95,
           },
+        });
+        map?.on("click", "coverage-fill", (event) => {
+          const pincode = String(event.features?.[0]?.properties?.pincode ?? "");
+          const dealer = dealersRef.current.find(
+            (candidate) => candidate.pincode === pincode,
+          );
+          if (dealer) onSelectRef.current(dealer.id);
+        });
+        map?.on("mouseenter", "coverage-fill", () => {
+          if (map) map.getCanvas().style.cursor = "pointer";
+        });
+        map?.on("mouseleave", "coverage-fill", () => {
+          if (map) map.getCanvas().style.cursor = "";
         });
         map?.addSource("dealers", {
           type: "geojson",
@@ -307,12 +466,31 @@ function TerritoryMap({
   useEffect(() => {
     if (!ready || !mapRef.current) return;
     (mapRef.current.getSource("coverage") as GeoJSONSource)?.setData(
-      makeCoverageData(dealers) as never,
+      makeCoverageData(boundaries, dealers) as never,
     );
     (mapRef.current.getSource("dealers") as GeoJSONSource)?.setData(
       makeDealerData(dealers) as never,
     );
-  }, [dealers, ready]);
+  }, [boundaries, dealers, ready]);
+
+  useEffect(() => {
+    if (
+      !ready ||
+      !mapRef.current ||
+      !boundaries ||
+      fittedInitialCoverageRef.current
+    ) {
+      return;
+    }
+    const bounds = getCoverageBounds(makeCoverageData(boundaries, dealers));
+    if (!bounds) return;
+    fittedInitialCoverageRef.current = true;
+    mapRef.current.fitBounds(bounds, {
+      padding: { top: 56, right: 48, bottom: 56, left: 48 },
+      maxZoom: 8.25,
+      duration: 0,
+    });
+  }, [boundaries, dealers, ready]);
 
   useEffect(() => {
     if (!ready || !mapRef.current) return;
@@ -344,9 +522,12 @@ function TerritoryMap({
         aria-label="Dealer territory map"
       />
       <div className="pointer-events-none absolute bottom-5 left-5 rounded-xl border border-white/70 bg-white/92 px-3.5 py-2.5 text-xs text-[#46514d] shadow-[0_8px_24px_rgba(25,38,34,0.13)] backdrop-blur">
-        <span className="font-semibold">Prototype coverage</span>
+        <span className="font-semibold">PIN-code coverage</span>
         <span className="mt-0.5 block text-[#6e7874]">
-          Colored circles use PIN centroids, not final territory borders.
+          Colored polygons follow postal boundaries. Grey remains unassigned.
+        </span>
+        <span className="mt-0.5 block text-[10px] text-[#89928e]">
+          Boundary source: Department of Posts via OGD India / Esri India
         </span>
       </div>
     </div>
@@ -1081,8 +1262,8 @@ export default function Home() {
                   Unassigned coverage
                 </p>
                 <p className="mt-0.5 text-[11px] leading-4 text-[#7a8581]">
-                  Grey areas have no dealer territory in the sample. Andhra Pradesh
-                  currently has no rows in the workbook.
+                  Grey PIN areas are unassigned. Andhra Pradesh currently has no
+                  dealer rows in the workbook.
                 </p>
               </div>
             </div>

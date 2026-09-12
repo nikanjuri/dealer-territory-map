@@ -43,8 +43,8 @@ Exact street addresses are intentionally deferred. They will be required for rel
 ## Constraints
 
 - Scope is Telangana and Andhra Pradesh, not Hyderabad alone.
-- A PIN centroid is a point approximation and must not be presented as an official sales territory.
-- Final employee coverage requires approved territory geometry, such as PIN-boundary ownership or manually reviewed polygons.
+- A PIN centroid is only a dealer-location approximation; salesperson coverage uses PIN-code boundary polygons.
+- PIN boundaries are the starting territory model and may later be replaced with districts, mandals, or manager-reviewed custom polygons.
 - Dealer and employee assignment data is operational business data; keep access private by default.
 - The current prototype stores edits in one browser and is not yet a shared system of record.
 
@@ -54,7 +54,7 @@ Exact street addresses are intentionally deferred. They will be required for rel
 - Exact-address geocoding
 - Automated reassignment of conflicting territories
 - Shared multi-user editing, authentication, audit history, or production database
-- Claiming approximate coverage circles as official territory borders
+- Claiming PIN boundaries are permanent business territories before sales-team review
 
 ## Open Questions
 

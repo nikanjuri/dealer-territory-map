@@ -33,7 +33,7 @@ Design profile: `product`. Use Emil Kowalski design-engineering guidance and Imp
 
 - Header: product identity, state scope, record metrics, and add/import actions.
 - Sidebar: search, salesperson legend/filters, dealer results, and selected-dealer details.
-- Map: state context, approved coverage geometry, dealer pins, navigation, attribution, and a clear prototype notice when geometry is approximate.
+- Map: state context, PIN-boundary coverage geometry, dealer pins, navigation, attribution, and a clear notice that the territory model can change later.
 - On compact screens, controls and dealer results precede the map in document order so the interface remains understandable without relying on spatial layout.
 
 ## Colors
@@ -115,12 +115,12 @@ The production model should separate:
 - dated territory assignments with approval status;
 - import batches, validation issues, and audit events.
 
-Territory geometry is authoritative for area coloring. Dealer proximity or PIN-centroid circles are never authoritative ownership.
+PIN-code geometry is authoritative for area coloring in the current model. Dealer-point proximity is never used as ownership.
 
 ## Architecture and Integrations
 
 - UI: React/TypeScript, vinext/Next-compatible routing, Tailwind CSS, local shadcn-derived components.
-- Mapping: MapLibre GL; OpenStreetMap raster tiles; local GeoJSON for the two state outlines.
+- Mapping: MapLibre GL; OpenStreetMap raster tiles; local GeoJSON for the two state outlines and nine initial PIN boundaries; on-demand Esri India boundary queries for newly added PINs.
 - Import: SheetJS parses the first worksheet from `.xlsx`, `.xls`, or `.csv` in the browser.
 - Geocoding: Nominatim by six-digit PIN for small prototype additions. Production bulk usage needs a compliant provider and caching strategy.
 - Persistence: browser local storage only in this phase.
@@ -142,5 +142,5 @@ Territory geometry is authoritative for area coloring. Dealer proximity or PIN-c
 
 - MapLibre plus OpenStreetMap avoids a required map API key for the prototype, but tile and geocoding usage policies still apply.
 - Client-side import is fast and private to the current browser, but cannot support shared operations or auditability.
-- The 12 km coverage circles make early data visible but are deliberately labeled approximate and must be removed once approved polygons exist.
+- PIN polygons provide meaningful area coverage now, while remaining replaceable if the sales team later adopts districts, mandals, or custom territories.
 - One dashboard route minimizes navigation during the prototype; administration may become a separate route when permissions and audit workflows are added.
