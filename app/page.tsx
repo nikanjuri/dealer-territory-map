@@ -15,7 +15,9 @@ import {
   ChevronRight,
   CircleDot,
   FileSpreadsheet,
+  List,
   Loader2,
+  Map as MapIcon,
   MapPinned,
   Plus,
   Search,
@@ -515,14 +517,18 @@ function TerritoryMap({
   }, [focusRequest]);
 
   return (
-    <div className="relative h-full min-h-[480px] overflow-hidden bg-[#e5e8e4]">
+    <div className="relative h-full min-h-0 overflow-hidden bg-[#e5e8e4] lg:min-h-[480px]">
       <div
         ref={mapContainer}
         className="absolute inset-0"
         style={{ position: "absolute", inset: 0 }}
         aria-label="Dealer territory map"
       />
-      <div className="pointer-events-none absolute bottom-5 left-5 rounded-xl border border-white/70 bg-white/92 px-3.5 py-2.5 text-xs text-[#46514d] shadow-[0_8px_24px_rgba(25,38,34,0.13)] backdrop-blur">
+      <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2 rounded-full border border-white/75 bg-white/94 px-3 py-2 text-[11px] font-semibold text-[#46514d] shadow-[0_8px_24px_rgba(25,38,34,0.13)] backdrop-blur sm:hidden">
+        <span className="h-2.5 w-2.5 rounded-sm border border-[#69746f] bg-[#c9cecb]" />
+        PIN territory coverage
+      </div>
+      <div className="pointer-events-none absolute bottom-5 left-5 hidden rounded-xl border border-white/70 bg-white/92 px-3.5 py-2.5 text-xs text-[#46514d] shadow-[0_8px_24px_rgba(25,38,34,0.13)] backdrop-blur sm:block">
         <span className="font-semibold">PIN-code coverage</span>
         <span className="mt-0.5 block text-[#6e7874]">
           Colored polygons follow postal boundaries. Grey remains unassigned.
@@ -584,7 +590,7 @@ function AddDealerDialog({
         <Button
           size="sm"
           aria-label="Add dealer"
-          className="h-9 rounded-lg bg-[#d9f36b] text-[#173a34] hover:bg-[#cce960]"
+          className="h-10 w-10 rounded-xl bg-[#d9f36b] p-0 text-[#173a34] transition-[transform,background-color] active:scale-[0.97] hover:bg-[#cce960] sm:h-9 sm:w-auto sm:rounded-lg sm:px-3"
         >
           <Plus className="h-4 w-4" />
           <span className="hidden sm:inline">Add dealer</span>
@@ -790,7 +796,7 @@ function ImportDealersDialog({
           size="sm"
           variant="outline"
           aria-label="Import Excel"
-          className="h-9 border-white/20 bg-white/8 text-white hover:bg-white/14 hover:text-white"
+          className="h-10 w-10 rounded-xl border-white/20 bg-white/8 p-0 text-white transition-[transform,background-color] active:scale-[0.97] hover:bg-white/14 hover:text-white sm:h-9 sm:w-auto sm:rounded-md sm:px-3"
         >
           <Upload className="h-4 w-4" />
           <span className="hidden sm:inline">Import Excel</span>
@@ -867,6 +873,15 @@ export default function Home() {
   ]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [focusRequest, setFocusRequest] = useState<Dealer | null>(null);
+  const [mobileView, setMobileView] = useState<"map" | "dealers">("map");
+
+  useEffect(() => {
+    if (mobileView !== "map") return;
+    const frame = window.requestAnimationFrame(() => {
+      window.dispatchEvent(new Event("resize"));
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [mobileView]);
 
   useEffect(() => {
     let storedDealers: Dealer[] | null = null;
@@ -928,6 +943,7 @@ export default function Home() {
   const selectDealer = (dealer: Dealer) => {
     setSelectedId(dealer.id);
     setFocusRequest(dealer);
+    setMobileView("map");
   };
 
   const togglePerson = (person: string) => {
@@ -1100,20 +1116,22 @@ export default function Home() {
   }, [dealers]);
 
   return (
-    <main className="min-h-screen bg-[#eef0ed] text-[#18221f]">
-      <header className="flex h-[72px] items-center justify-between border-b border-white/10 bg-[#173a34] px-4 text-white sm:px-6">
-        <div className="flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#d9f36b] text-[#173a34] shadow-inner">
+    <main className="h-[100svh] overflow-hidden bg-[#eef0ed] text-[#18221f] lg:h-auto lg:min-h-screen lg:overflow-visible">
+      <header className="flex h-16 items-center justify-between border-b border-white/10 bg-[#173a34] px-3 text-white sm:px-6 lg:h-[72px]">
+        <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#d9f36b] text-[#173a34] shadow-inner sm:h-10 sm:w-10">
             <MapPinned className="h-5 w-5" aria-hidden="true" />
           </span>
-          <div>
-            <h1 className="text-base font-semibold tracking-[-0.01em] sm:text-lg">
+          <div className="min-w-0">
+            <h1 className="truncate text-[15px] font-semibold tracking-[-0.01em] sm:text-lg">
               Dealer Territory Map
             </h1>
-            <p className="text-xs text-white/62">Telangana + Andhra Pradesh</p>
+            <p className="truncate text-[11px] text-white/62 sm:text-xs">
+              Telangana + Andhra Pradesh
+            </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="ml-2 flex shrink-0 items-center gap-2">
           <div className="mr-2 hidden items-center gap-6 text-sm xl:flex">
             <div>
               <span className="block text-[11px] uppercase tracking-[0.08em] text-white/45">
@@ -1142,9 +1160,61 @@ export default function Home() {
         </div>
       </header>
 
-      <div className="grid min-h-[calc(100vh-72px)] grid-cols-1 lg:grid-cols-[330px_minmax(0,1fr)]">
-        <aside className="z-10 flex max-h-[44vh] flex-col border-r border-[#d9dedb] bg-[#f7f8f6] lg:max-h-[calc(100vh-72px)]">
-          <div className="border-b border-[#dde2df] p-4">
+      <nav
+        className="grid h-14 grid-cols-2 gap-1.5 border-b border-[#d9dedb] bg-white p-1.5 lg:hidden"
+        aria-label="Mobile view"
+      >
+        <button
+          type="button"
+          aria-pressed={mobileView === "map"}
+          aria-controls="territory-map-panel"
+          onClick={() => setMobileView("map")}
+          className={
+            "flex min-h-11 items-center justify-center gap-2 rounded-xl text-sm font-semibold transition-[transform,background-color,color,box-shadow] active:scale-[0.98] " +
+            (mobileView === "map"
+              ? "bg-[#173a34] text-white shadow-sm"
+              : "text-[#65716d]")
+          }
+        >
+          <MapIcon className="h-4 w-4" aria-hidden="true" />
+          Map
+        </button>
+        <button
+          type="button"
+          aria-pressed={mobileView === "dealers"}
+          aria-controls="dealer-list-panel"
+          onClick={() => setMobileView("dealers")}
+          className={
+            "flex min-h-11 items-center justify-center gap-2 rounded-xl text-sm font-semibold transition-[transform,background-color,color,box-shadow] active:scale-[0.98] " +
+            (mobileView === "dealers"
+              ? "bg-[#173a34] text-white shadow-sm"
+              : "text-[#65716d]")
+          }
+        >
+          <List className="h-4 w-4" aria-hidden="true" />
+          Dealers
+          <span
+            className={
+              "rounded-full px-1.5 py-0.5 text-[10px] tabular-nums " +
+              (mobileView === "dealers"
+                ? "bg-white/14 text-white"
+                : "bg-[#e7ece9] text-[#53605b]")
+            }
+          >
+            {filteredDealers.length}
+          </span>
+        </button>
+      </nav>
+
+      <div className="grid min-h-[calc(100svh-120px)] grid-cols-1 lg:min-h-[calc(100vh-72px)] lg:grid-cols-[330px_minmax(0,1fr)]">
+        <aside
+          id="dealer-list-panel"
+          className={
+            "z-10 h-[calc(100svh-120px)] flex-col border-r border-[#d9dedb] bg-[#f7f8f6] lg:flex lg:h-auto lg:max-h-[calc(100vh-72px)] " +
+            (mobileView === "dealers" ? "flex" : "hidden")
+          }
+        >
+          <div className="border-b border-[#dde2df] p-3 sm:p-4">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#75807c]" />
               <Input
@@ -1170,7 +1240,7 @@ export default function Home() {
                 <span>Sales coverage</span>
                 <span>{filteredDealers.length} visible</span>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="scrollbar-none flex gap-2 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible lg:pb-0">
                 {salespeople.map((person) => {
                   const active = activePeople.includes(person);
                   return (
@@ -1179,7 +1249,7 @@ export default function Home() {
                       onClick={() => togglePerson(person)}
                       aria-pressed={active}
                       className={
-                        "flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition " +
+                        "flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition-[transform,background-color,border-color,color,box-shadow] active:scale-[0.98] " +
                         (active
                           ? "border-[#b8c1bd] bg-white text-[#25312d] shadow-sm"
                           : "border-transparent bg-[#e8ebe9] text-[#87908d]")
@@ -1209,7 +1279,7 @@ export default function Home() {
                     <button
                       onClick={() => selectDealer(dealer)}
                       className={
-                        "group flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition " +
+                        "group flex min-h-14 w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-[transform,background-color] active:scale-[0.99] " +
                         (selectedId === dealer.id
                           ? "bg-[#e7ece9]"
                           : "hover:bg-[#eef1ef]")
@@ -1234,7 +1304,7 @@ export default function Home() {
                           ) : null}
                         </span>
                         <span className="mt-0.5 block truncate text-xs text-[#76817d]">
-                          {dealer.area} · {dealer.pincode}
+                          {dealer.area} · {dealer.pincode} · {dealer.salesperson}
                         </span>
                       </span>
                       <ChevronRight className="h-4 w-4 text-[#9ba39f] transition group-hover:translate-x-0.5" />
@@ -1255,14 +1325,17 @@ export default function Home() {
             )}
           </div>
 
-          <div className="border-t border-[#dde2df] bg-white/70 p-4">
+          <div className="border-t border-[#dde2df] bg-white/70 px-4 py-3 lg:p-4">
             <div className="flex items-start gap-2.5">
               <span className="mt-0.5 h-3 w-3 shrink-0 rounded-sm border border-[#7d8884] bg-[#c9cecb]" />
               <div>
                 <p className="text-xs font-semibold text-[#4f5a56]">
                   Unassigned coverage
                 </p>
-                <p className="mt-0.5 text-[11px] leading-4 text-[#7a8581]">
+                <p className="mt-0.5 text-[11px] leading-4 text-[#7a8581] lg:hidden">
+                  Grey means the PIN territory is not assigned.
+                </p>
+                <p className="mt-0.5 hidden text-[11px] leading-4 text-[#7a8581] lg:block">
                   Grey PIN areas are unassigned. Andhra Pradesh currently has no
                   dealer rows in the workbook.
                 </p>
@@ -1271,7 +1344,13 @@ export default function Home() {
           </div>
         </aside>
 
-        <section className="relative min-h-[56vh] overflow-hidden">
+        <section
+          id="territory-map-panel"
+          className={
+            "relative h-[calc(100svh-120px)] min-h-0 overflow-hidden lg:block lg:h-auto lg:min-h-[56vh] " +
+            (mobileView === "map" ? "block" : "hidden")
+          }
+        >
           <TerritoryMap
             dealers={filteredDealers}
             selectedId={selectedId}
@@ -1283,7 +1362,7 @@ export default function Home() {
           />
 
           {selectedDealer ? (
-            <article className="absolute right-4 top-4 w-[min(360px,calc(100%-32px))] rounded-2xl border border-white/70 bg-white/95 p-4 shadow-[0_18px_44px_rgba(23,58,52,0.18)] backdrop-blur sm:p-5">
+            <article className="absolute bottom-3 left-3 right-3 max-h-[48%] overflow-y-auto rounded-2xl border border-white/70 bg-white/95 p-4 shadow-[0_18px_44px_rgba(23,58,52,0.18)] backdrop-blur sm:bottom-auto sm:left-auto sm:right-4 sm:top-4 sm:w-[min(360px,calc(100%-32px))] sm:max-h-none sm:overflow-visible sm:p-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-[11px] font-bold uppercase tracking-[0.09em] text-[#76817d]">

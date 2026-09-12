@@ -20,6 +20,7 @@ PIN-boundary prototype validation and territory-model refinement.
 - [x] Publish and verify the public Vercel deployment, including the nine sample PIN boundary features.
 - [x] Replace radius-based coverage circles with PIN-code boundary polygons for all nine sample PINs.
 - [x] Load additional PIN boundaries on demand when new dealer PINs are added or imported.
+- [x] Replace the stacked mobile layout with a map-first Map/Dealers workflow and focused dealer bottom card.
 
 ## Current Objective
 
@@ -44,6 +45,7 @@ Validate PIN-level salesperson ownership across a broader Telangana and Andhra P
 - [x] Excel import accepts the supplied sample and rejects duplicate rows.
 - [x] WebMCP list/add tools handle valid and invalid input.
 - [x] Port `5740` is registered and matches package scripts and docs.
+- [x] Mobile viewport, dealer-list switching, dealer selection, map resizing, and desktop layout are visually verified.
 - [ ] Territory polygons are visually reviewed against business expectations for the sample areas.
 - [ ] Keyboard, focus, contrast, touch targets, reduced motion, empty states, and error states receive a complete accessibility pass.
 - [ ] A shared backend, if selected, is tested locally before any remote migration.

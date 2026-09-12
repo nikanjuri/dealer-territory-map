@@ -34,7 +34,7 @@ Design profile: `product`. Use Emil Kowalski design-engineering guidance and Imp
 - Header: product identity, state scope, record metrics, and add/import actions.
 - Sidebar: search, salesperson legend/filters, dealer results, and selected-dealer details.
 - Map: state context, PIN-boundary coverage geometry, dealer pins, navigation, attribution, and a clear notice that the territory model can change later.
-- On compact screens, controls and dealer results precede the map in document order so the interface remains understandable without relying on spatial layout.
+- On compact screens, the map opens first and a persistent Map/Dealers switch exposes the searchable list without forcing the primary map below the fold.
 
 ## Colors
 
@@ -56,7 +56,7 @@ Design profile: `product`. Use Emil Kowalski design-engineering guidance and Imp
 
 - Desktop: fixed-width operational sidebar beside a fluid map; map retains a practical minimum height.
 - Tablet: allow the sidebar to narrow without truncating essential dealer/PIN labels.
-- Mobile: stack controls, list, details, and map; keep touch actions visible and avoid horizontal overflow.
+- Mobile: keep the app within the viewport, show either the map or dealer panel at a time, and present selected-dealer details as a dismissible map-bottom card.
 - Base spacing follows a 4 px rhythm, with 8/12/16/24/32 px as the common intervals.
 - Dense lists are acceptable, but dealer rows need a minimum 44 px interactive target.
 
@@ -98,7 +98,7 @@ Design profile: `product`. Use Emil Kowalski design-engineering guidance and Imp
 
 ## Responsive Behavior
 
-- Compact mobile: single-column flow, icon-plus-label actions where space permits, vertically scrollable list, map at least 420 px tall.
+- Compact mobile: map-first viewport with a 44 px minimum Map/Dealers switch, compact icon actions, horizontally scrollable ownership filters, and an independently scrollable dealer list.
 - Tablet: balanced split or stacked layout depending on available width; no clipped filters.
 - Desktop/wide: sidebar and map share the viewport; map is the dominant surface.
 - Never hide state scope, attribution, data warnings, or the distinction between approximate and approved territories.
