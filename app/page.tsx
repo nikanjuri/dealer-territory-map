@@ -334,6 +334,7 @@ function TerritoryMap({
     void import("maplibre-gl").then((module) => {
       if (!active || !mapContainer.current) return;
       const maplibregl = module;
+      maplibregl.setWorkerUrl("/maplibre-gl-worker.mjs");
       map = new maplibregl.Map({
         container: mapContainer.current,
         center: [80.45, 16.35],

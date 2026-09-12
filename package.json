@@ -7,7 +7,9 @@
   },
   "scripts": {
     "install:ci": "npm ci --no-audit --no-fund",
-    "dev": "next dev --port 5740",
+    "prepare:map": "node scripts/prepare-maplibre-worker.mjs",
+    "dev": "npm run prepare:map && next dev --port 5740",
+    "prebuild": "npm run prepare:map",
     "build": "next build",
     "start": "next start --port 5740",
     "lint": "eslint . --ignore-pattern .next --ignore-pattern dist",

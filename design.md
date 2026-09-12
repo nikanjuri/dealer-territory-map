@@ -120,7 +120,7 @@ PIN-code geometry is authoritative for area coloring in the current model. Deale
 ## Architecture and Integrations
 
 - UI: native Next.js App Router with React/TypeScript, Tailwind CSS, and local shadcn-derived components.
-- Mapping: MapLibre GL; OpenStreetMap raster tiles; local GeoJSON for the two state outlines and nine initial PIN boundaries; on-demand Esri India boundary queries for newly added PINs.
+- Mapping: MapLibre GL with an explicitly hosted same-origin worker; OpenStreetMap raster tiles; local GeoJSON for the two state outlines and nine initial PIN boundaries; on-demand Esri India boundary queries for newly added PINs.
 - Import: SheetJS parses the first worksheet from `.xlsx`, `.xls`, or `.csv` in the browser.
 - Geocoding: Nominatim by six-digit PIN for small prototype additions. Production bulk usage needs a compliant provider and caching strategy.
 - Persistence: browser local storage only in this phase.

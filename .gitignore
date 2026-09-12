@@ -46,6 +46,9 @@ next-env.d.ts
 /.codex/
 /outputs/
 /work/
+/public/maplibre-gl-worker.mjs
+/public/maplibre-gl-shared.mjs
+/public/maplibre-gl.LICENSE.txt
 .env
 .env.local
 .env.*.local

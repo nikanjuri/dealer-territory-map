@@ -51,7 +51,7 @@ Choose Telangana or Andhra Pradesh for the uploaded file. The prototype accepts 
 
 - Next.js App Router with React and TypeScript
 - Tailwind CSS and local shadcn-derived UI primitives
-- MapLibre GL with OpenStreetMap raster tiles
+- MapLibre GL with a same-origin worker and OpenStreetMap raster tiles
 - Local GeoJSON outlines for Telangana and Andhra Pradesh
 - Local PIN-boundary polygons for all nine sample PINs, with on-demand boundary lookup for newly added PINs
 - SheetJS for browser-side spreadsheet parsing
