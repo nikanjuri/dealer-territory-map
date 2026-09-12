@@ -1,0 +1,157 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "../vendor/shadcn-tailwind-4.13.0.css";
+@import "maplibre-gl/dist/maplibre-gl.css";
+
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+}
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility scrollbar-gutter-stable {
+  scrollbar-gutter: stable;
+}
+
+:root {
+  --background: #eef0ed;
+  --foreground: #18221f;
+  --card: #ffffff;
+  --card-foreground: #18221f;
+  --popover: #ffffff;
+  --popover-foreground: #171717;
+  --primary: #173a34;
+  --primary-foreground: #ffffff;
+  --secondary: #e7ece9;
+  --secondary-foreground: #25312d;
+  --muted: #eef1ef;
+  --muted-foreground: #6e7874;
+  --accent: #d9f36b;
+  --accent-foreground: #173a34;
+  --destructive: #e7000b;
+  --border: #d9dedb;
+  --input: #d7dcda;
+  --ring: #2f6fe4;
+  --chart-1: #df4e3f;
+  --chart-2: #2f6fe4;
+  --chart-3: #c48a12;
+  --chart-4: #173a34;
+  --chart-5: #8b5cf6;
+  --radius: 0.75rem;
+  --sidebar: #f7f8f6;
+  --sidebar-foreground: #18221f;
+  --sidebar-primary: #173a34;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e7ece9;
+  --sidebar-accent-foreground: #25312d;
+  --sidebar-border: #d9dedb;
+  --sidebar-ring: #2f6fe4;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #101815;
+    --foreground: #edf4f0;
+    --card: #18231f;
+    --card-foreground: #edf4f0;
+    --popover: #18231f;
+    --popover-foreground: #edf4f0;
+    --primary: #d9f36b;
+    --primary-foreground: #173a34;
+    --secondary: #25332e;
+    --secondary-foreground: #edf4f0;
+    --muted: #25332e;
+    --muted-foreground: #aeb9b4;
+    --accent: #d9f36b;
+    --accent-foreground: #173a34;
+    --destructive: #ff6467;
+    --border: #ffffff1f;
+    --input: #ffffff2b;
+    --ring: #77a0ff;
+    --chart-1: #f26c5e;
+    --chart-2: #77a0ff;
+    --chart-3: #e9b13f;
+    --chart-4: #d9f36b;
+    --chart-5: #b99cff;
+    --sidebar: #18231f;
+    --sidebar-foreground: #edf4f0;
+    --sidebar-primary: #d9f36b;
+    --sidebar-primary-foreground: #173a34;
+    --sidebar-accent: #25332e;
+    --sidebar-accent-foreground: #edf4f0;
+    --sidebar-border: #ffffff1f;
+    --sidebar-ring: #77a0ff;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  margin: 0;
+}
+
+.maplibregl-map {
+  font-family: inherit;
+}
+
+.maplibregl-ctrl-group {
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 72%);
+  border-radius: 12px;
+  box-shadow: 0 8px 20px rgb(23 58 52 / 12%);
+}
+
+.maplibregl-ctrl-attrib {
+  color: #56615d;
+  font-size: 10px;
+}
