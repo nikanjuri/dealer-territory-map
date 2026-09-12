@@ -38,14 +38,14 @@ Exact street addresses are intentionally deferred. They will be required for rel
 - OpenStreetMap raster tiles rendered with MapLibre.
 - Responsive desktop and mobile experience.
 - Client-side search, filters, manual entry, and spreadsheet import.
-- A private hosted prototype for review.
+- A shareable public prototype hosted on Vercel.
 
 ## Constraints
 
 - Scope is Telangana and Andhra Pradesh, not Hyderabad alone.
 - A PIN centroid is only a dealer-location approximation; salesperson coverage uses PIN-code boundary polygons.
 - PIN boundaries are the starting territory model and may later be replaced with districts, mandals, or manager-reviewed custom polygons.
-- Dealer and employee assignment data is operational business data; keep access private by default.
+- The public deployment must contain sample or otherwise approved non-sensitive dealer and employee assignment data until authentication is added.
 - The current prototype stores edits in one browser and is not yet a shared system of record.
 
 ## Non-goals for the Prototype
@@ -61,5 +61,5 @@ Exact street addresses are intentionally deferred. They will be required for rel
 1. Should territories follow postal PIN boundaries, districts/mandals, or manager-drawn custom polygons?
 2. Can one PIN code belong to more than one salesperson, and if so, what rule separates ownership?
 3. Who may view, edit, approve, and export assignments?
-4. Is the current private Sites deployment the intended long-term host, or only a review environment?
+4. Should the Vercel deployment remain a public prototype, or gain authentication before operational data is loaded?
 5. Which system should become the source of truth when shared persistence is added?

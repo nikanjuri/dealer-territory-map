@@ -16,6 +16,7 @@ PIN-boundary prototype validation and territory-model refinement.
 - [x] Flag three questionable PIN/area values from the sample.
 - [x] Verify the prototype at desktop and mobile sizes.
 - [x] Publish a private review deployment through Sites.
+- [x] Migrate the runtime from Sites/vinext to native Next.js for Vercel.
 - [x] Replace radius-based coverage circles with PIN-code boundary polygons for all nine sample PINs.
 - [x] Load additional PIN boundaries on demand when new dealer PINs are added or imported.
 
@@ -45,7 +46,7 @@ Validate PIN-level salesperson ownership across a broader Telangana and Andhra P
 - [ ] Territory polygons are visually reviewed against business expectations for the sample areas.
 - [ ] Keyboard, focus, contrast, touch targets, reduced motion, empty states, and error states receive a complete accessibility pass.
 - [ ] A shared backend, if selected, is tested locally before any remote migration.
-- [ ] Preview and production deployments are reverified after territory-model changes.
+- [ ] The Vercel preview and production deployments are reverified after territory-model changes.
 
 ## Risks
 
@@ -57,6 +58,6 @@ Validate PIN-level salesperson ownership across a broader Telangana and Andhra P
 
 ## Deployment Gates
 
-- The existing Sites deployment is a private review prototype, not a production system of record.
-- Do not provision a database, change access policy, deploy a new version, or migrate data without an explicit project decision.
+- The Vercel deployment is a public prototype, not a production system of record; use only sample or approved non-sensitive data.
+- Do not provision a database, add authentication, or migrate operational data without an explicit project decision.
 - Do not claim production readiness until territory geometry, persistence, access control, backups, and operational ownership are verified.

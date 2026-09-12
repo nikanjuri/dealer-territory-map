@@ -29,7 +29,7 @@ npm run verify
 - Keep unassigned areas grey only when the geographic boundary set is complete.
 - Preserve source values and surface PIN/area conflicts for human review; do not silently correct them.
 - Keep salesperson colors stable and provide textual ownership labels because color alone is insufficient.
-- Dealer and employee assignment data is private operational business data.
+- The hosted app is public; use only sample or approved non-sensitive dealer and employee assignment data until authentication exists.
 - Exact addresses are required before implementing route optimization.
 
 ## Implementation Conventions
@@ -52,6 +52,16 @@ npm run verify
 ## Remote and Risk Boundaries
 
 - Do not provision a database, modify hosted data, change access policy, publish a deployment, or push to a remote without explicit user intent.
-- `.openai/hosting.json` links the existing private review site; do not repurpose it casually.
+- Vercel is the selected provider; keep `.vercel/` local and never commit provider credentials or linkage state.
 - Never commit credentials, `.env*` secrets, local provider state, or browser-derived authentication data.
 - Avoid force-pushes, destructive resets, and silent territory reassignment.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

@@ -119,13 +119,13 @@ PIN-code geometry is authoritative for area coloring in the current model. Deale
 
 ## Architecture and Integrations
 
-- UI: React/TypeScript, vinext/Next-compatible routing, Tailwind CSS, local shadcn-derived components.
+- UI: native Next.js App Router with React/TypeScript, Tailwind CSS, and local shadcn-derived components.
 - Mapping: MapLibre GL; OpenStreetMap raster tiles; local GeoJSON for the two state outlines and nine initial PIN boundaries; on-demand Esri India boundary queries for newly added PINs.
 - Import: SheetJS parses the first worksheet from `.xlsx`, `.xls`, or `.csv` in the browser.
 - Geocoding: Nominatim by six-digit PIN for small prototype additions. Production bulk usage needs a compliant provider and caching strategy.
 - Persistence: browser local storage only in this phase.
 - Agent interface: browser WebMCP exposes constrained list/add dealer tools where supported.
-- Hosting: an existing private Sites deployment is linked through `.openai/hosting.json`; remote publication remains an explicit action.
+- Hosting: Vercel serves the public prototype; `.vercel/` remains local provider state and is never committed.
 
 ## Do's and Don'ts
 
@@ -135,7 +135,7 @@ PIN-code geometry is authoritative for area coloring in the current model. Deale
 - Do keep data entry reversible and validate before persistence.
 - Don't imply that PIN centroids are boundaries.
 - Don't silently assign a whole PIN when source rows conflict.
-- Don't expose operational dealer or employee data publicly by default.
+- Don't load sensitive operational dealer or employee data into the public prototype before authentication exists.
 - Don't add animation runtimes, mapping providers, databases, or design systems without a concrete need and documented decision.
 
 ## Tradeoffs and Decisions

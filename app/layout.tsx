@@ -5,9 +5,6 @@ export const metadata: Metadata = {
   title: "Dealer Territory Map",
   description:
     "Salesperson territory coverage and dealer locations across Telangana and Andhra Pradesh.",
-  other: {
-    "codex-preview": "development",
-  },
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",

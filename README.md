@@ -4,9 +4,7 @@ An interactive operational map for salesperson territories and dealer locations 
 
 ## Current Status
 
-The app is a review prototype. Dealer pins use PIN-centroid approximations and salesperson colors now fill PIN-code boundary polygons. Unassigned geography remains grey. New entries are stored in the current browser only.
-
-Private review deployment: [dealer-territory-map-ap-ts.nikanjuri.chatgpt.site](https://dealer-territory-map-ap-ts.nikanjuri.chatgpt.site)
+The app is a public review prototype hosted on Vercel. Dealer pins use PIN-centroid approximations and salesperson colors fill PIN-code boundary polygons. Unassigned geography remains grey. New entries are stored in the current browser only, so changes are not shared between visitors.
 
 ## Local Setup
 
@@ -32,8 +30,8 @@ The current prototype requires no environment variables. `.env.example` records 
 npm run dev        # local development on port 5740
 npm run lint       # ESLint
 npm run typecheck  # TypeScript without emission
-npm run build      # production Sites artifact
-npm run start      # serve the built Worker locally on port 5740
+npm run build      # production Next.js build
+npm run start      # serve the production build locally on port 5740
 npm run verify     # lint, typecheck, and production build
 ```
 
@@ -49,7 +47,7 @@ Choose Telangana or Andhra Pradesh for the uploaded file. The prototype accepts 
 
 ## Architecture
 
-- React and TypeScript on vinext/Next-compatible routing
+- Next.js App Router with React and TypeScript
 - Tailwind CSS and local shadcn-derived UI primitives
 - MapLibre GL with OpenStreetMap raster tiles
 - Local GeoJSON outlines for Telangana and Andhra Pradesh
@@ -87,8 +85,8 @@ ports sync /Users/nikhilanjuri/GitHub
 ports check
 ```
 
-Local verification, Sites linkage, private review deployment, and production readiness are separate states. The current deployment is a private review artifact and not a shared system of record.
+Local verification, Vercel linkage, public deployment, and production readiness are separate states. The public deployment is a review artifact and not a shared system of record.
 
 ## Deployment
 
-`.openai/hosting.json` preserves the existing Sites project linkage. Publishing a new version, changing access, attaching storage, or migrating data is a deliberate remote action and is not part of routine local development.
+Vercel is the selected host. `.vercel/` contains local provider linkage and must remain ignored. Publishing a new version, attaching storage, adding authentication, or migrating operational data is a deliberate remote action and is not part of routine local development.
