@@ -22,9 +22,9 @@
   "profile": "public-static",
   "project": "dealer-territory-map",
   "providers": {
-    "vercel": "selected-unlinked"
+    "vercel": "linked:prj_iJ7BL6BwaoD0v7gq6QWxyDO9FcZX"
   },
   "repo": "/Users/nikhilanjuri/GitHub/dealer-territory-map",
   "schema_version": 2,
-  "updated_at": "2026-09-12T11:17:51+00:00"
+  "updated_at": "2026-09-12T11:23:53+00:00"
 }

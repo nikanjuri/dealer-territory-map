@@ -17,6 +17,7 @@ PIN-boundary prototype validation and territory-model refinement.
 - [x] Verify the prototype at desktop and mobile sizes.
 - [x] Publish a private review deployment through Sites.
 - [x] Migrate the runtime from Sites/vinext to native Next.js for Vercel.
+- [x] Publish and verify the public Vercel deployment, including the nine sample PIN boundary features.
 - [x] Replace radius-based coverage circles with PIN-code boundary polygons for all nine sample PINs.
 - [x] Load additional PIN boundaries on demand when new dealer PINs are added or imported.
 

@@ -6,6 +6,8 @@ An interactive operational map for salesperson territories and dealer locations 
 
 The app is a public review prototype hosted on Vercel. Dealer pins use PIN-centroid approximations and salesperson colors fill PIN-code boundary polygons. Unassigned geography remains grey. New entries are stored in the current browser only, so changes are not shared between visitors.
 
+Public deployment: [dealer-territory-map.vercel.app](https://dealer-territory-map.vercel.app)
+
 ## Local Setup
 
 Prerequisites:
