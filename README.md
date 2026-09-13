@@ -1,10 +1,10 @@
 # Dealer Territory Map
 
-An interactive operational map for salesperson territories and dealer locations across Telangana and Andhra Pradesh. The prototype loads 10 sample dealers, assigns a stable color to each salesperson, supports search and filtering, and accepts manual or Excel/CSV additions.
+An interactive operational map and dealer directory for salesperson territories across Telangana and Andhra Pradesh. The prototype loads 10 sample dealers, assigns a stable color to each salesperson, supports search and filtering, and accepts manual or Excel/CSV additions.
 
 ## Current Status
 
-The app is a public review prototype hosted on Vercel. Dealer pins use PIN-centroid approximations and salesperson colors fill PIN-code boundary polygons. Unassigned geography remains grey. New entries are stored in the current browser only, so changes are not shared between visitors.
+The app is a public review prototype hosted on Vercel. Its Map view combines PIN-boundary coverage with dealer pins, while the Dealers view provides complete record columns, quality status, and direct map focus. New entries are stored in the current browser only, so changes are not shared between visitors.
 
 Public deployment: [dealer-territory-map.vercel.app](https://dealer-territory-map.vercel.app)
 

@@ -11,7 +11,9 @@ import {
 import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 import {
   AlertTriangle,
+  ArrowUpRight,
   Building2,
+  CheckCircle2,
   ChevronRight,
   CircleDot,
   FileSpreadsheet,
@@ -596,10 +598,12 @@ function AddDealerDialog({
           <span className="hidden sm:inline">Add dealer</span>
         </Button>
       </DialogTrigger>
-      <DialogContent className="border-[#d9dedb] bg-white sm:max-w-[520px]">
+      <DialogContent className="max-h-[calc(100svh-24px)] overflow-y-auto rounded-2xl border-[#d9dedb] bg-white text-[#18221f] shadow-[0_24px_70px_rgba(15,31,27,0.24)] sm:max-w-[520px]">
         <DialogHeader>
-          <DialogTitle>Add a dealer</DialogTitle>
-          <DialogDescription>
+          <DialogTitle className="text-xl tracking-[-0.02em] text-[#18221f]">
+            Add a dealer
+          </DialogTitle>
+          <DialogDescription className="leading-6 text-[#66716d]">
             The PIN code is converted to a map point. Add an exact address later
             for route planning.
           </DialogDescription>
@@ -607,19 +611,22 @@ function AddDealerDialog({
         <form onSubmit={submit}>
           <div className="grid gap-4 py-2 sm:grid-cols-2">
             <div className="grid gap-2 sm:col-span-2">
-              <Label htmlFor="dealer-name">Dealer name</Label>
+              <Label htmlFor="dealer-name" className="text-[#35413d]">
+                Dealer name
+              </Label>
               <Input
                 id="dealer-name"
                 value={dealer}
                 onChange={(event) => setDealer(event.target.value)}
                 placeholder="Sri Lakshmi Textiles"
                 autoFocus
+                className="h-10 border-[#cfd6d2] bg-[#fbfcfb] text-[#18221f] placeholder:text-[#8c9692]"
               />
             </div>
             <div className="grid gap-2">
-              <Label>Salesperson</Label>
+              <Label className="text-[#35413d]">Salesperson</Label>
               <Select value={salesperson} onValueChange={setSalesperson}>
-                <SelectTrigger className="w-full">
+                <SelectTrigger className="h-10 w-full border-[#cfd6d2] bg-[#fbfcfb] text-[#18221f]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -632,12 +639,12 @@ function AddDealerDialog({
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label>State</Label>
+              <Label className="text-[#35413d]">State</Label>
               <Select
                 value={state}
                 onValueChange={(value) => setState(value as Dealer["state"])}
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger className="h-10 w-full border-[#cfd6d2] bg-[#fbfcfb] text-[#18221f]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -647,7 +654,9 @@ function AddDealerDialog({
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="dealer-pin">PIN code</Label>
+              <Label htmlFor="dealer-pin" className="text-[#35413d]">
+                PIN code
+              </Label>
               <Input
                 id="dealer-pin"
                 value={pincode}
@@ -656,15 +665,19 @@ function AddDealerDialog({
                 }
                 inputMode="numeric"
                 placeholder="500001"
+                className="h-10 border-[#cfd6d2] bg-[#fbfcfb] text-[#18221f] placeholder:text-[#8c9692]"
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="dealer-area">Area</Label>
+              <Label htmlFor="dealer-area" className="text-[#35413d]">
+                Area
+              </Label>
               <Input
                 id="dealer-area"
                 value={area}
                 onChange={(event) => setArea(event.target.value)}
                 placeholder="Nampally"
+                className="h-10 border-[#cfd6d2] bg-[#fbfcfb] text-[#18221f] placeholder:text-[#8c9692]"
               />
             </div>
           </div>
@@ -673,10 +686,15 @@ function AddDealerDialog({
               type="button"
               variant="outline"
               onClick={() => setOpen(false)}
+              className="border-[#cfd6d2] bg-white text-[#35413d] transition-[transform,background-color] active:scale-[0.98]"
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={saving}>
+            <Button
+              type="submit"
+              disabled={saving}
+              className="bg-[#d9f36b] text-[#173a34] transition-[transform,background-color] active:scale-[0.98] hover:bg-[#cce960]"
+            >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {saving ? "Locating PIN…" : "Add to map"}
             </Button>
@@ -802,10 +820,12 @@ function ImportDealersDialog({
           <span className="hidden sm:inline">Import Excel</span>
         </Button>
       </DialogTrigger>
-      <DialogContent className="border-[#d9dedb] bg-white sm:max-w-[520px]">
+      <DialogContent className="max-h-[calc(100svh-24px)] overflow-y-auto rounded-2xl border-[#d9dedb] bg-white text-[#18221f] shadow-[0_24px_70px_rgba(15,31,27,0.24)] sm:max-w-[520px]">
         <DialogHeader>
-          <DialogTitle>Import dealers</DialogTitle>
-          <DialogDescription>
+          <DialogTitle className="text-xl tracking-[-0.02em] text-[#18221f]">
+            Import dealers
+          </DialogTitle>
+          <DialogDescription className="leading-6 text-[#66716d]">
             Upload an Excel or CSV file with the agreed four columns. The first
             worksheet will be imported.
           </DialogDescription>
@@ -814,7 +834,7 @@ function ImportDealersDialog({
           <div className="flex items-start gap-3">
             <FileSpreadsheet className="mt-0.5 h-5 w-5 text-[#173a34]" />
             <div>
-              <p className="text-sm font-semibold">
+              <p className="text-sm font-semibold text-[#26312e]">
                 SALES PERSON · DEALER NAME · PINCODE · AREA
               </p>
               <p className="mt-1 text-xs leading-5 text-[#6f7975]">
@@ -825,12 +845,12 @@ function ImportDealersDialog({
           </div>
         </div>
         <div className="grid gap-2">
-          <Label>State for imported rows</Label>
+          <Label className="text-[#35413d]">State for imported rows</Label>
           <Select
             value={state}
             onValueChange={(value) => setState(value as Dealer["state"])}
           >
-            <SelectTrigger className="w-full">
+            <SelectTrigger className="h-10 w-full border-[#cfd6d2] bg-[#fbfcfb] text-[#18221f]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -849,7 +869,7 @@ function ImportDealersDialog({
         />
         <DialogFooter>
           <Button
-            className="w-full sm:w-auto"
+            className="w-full bg-[#d9f36b] text-[#173a34] transition-[transform,background-color] active:scale-[0.98] hover:bg-[#cce960] sm:w-auto"
             disabled={importing}
             onClick={() => fileRef.current?.click()}
           >
@@ -859,6 +879,338 @@ function ImportDealersDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function DealerSearch({
+  query,
+  onChange,
+}: {
+  query: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="relative">
+      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#75807c]" />
+      <Input
+        value={query}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="Search dealer, area, PIN or state"
+        className="h-11 border-[#d7dcda] bg-white pl-9 pr-10 text-[15px] text-[#18221f] shadow-none placeholder:text-[#929c98] focus-visible:ring-[#2f6fe4]"
+        aria-label="Search dealers"
+      />
+      {query ? (
+        <button
+          type="button"
+          className="absolute right-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg text-[#75807c] transition-[transform,background-color] active:scale-[0.97] hover:bg-[#eef0ed]"
+          onClick={() => onChange("")}
+          aria-label="Clear search"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function SalespersonFilters({
+  salespeople,
+  activePeople,
+  onToggle,
+  onShowAll,
+  showAll = true,
+}: {
+  salespeople: string[];
+  activePeople: string[];
+  onToggle: (person: string) => void;
+  onShowAll: () => void;
+  showAll?: boolean;
+}) {
+  const allActive = salespeople.every((person) => activePeople.includes(person));
+
+  return (
+    <div className="scrollbar-none flex gap-2 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible lg:pb-0">
+      {showAll ? (
+        <button
+          type="button"
+          onClick={onShowAll}
+          aria-pressed={allActive}
+          className={
+            "flex shrink-0 items-center rounded-full border px-3 py-2 text-xs font-semibold transition-[transform,background-color,border-color,color,box-shadow] active:scale-[0.98] " +
+            (allActive
+              ? "border-[#173a34] bg-[#173a34] text-white shadow-sm"
+              : "border-[#cbd2cf] bg-white text-[#65716d]")
+          }
+        >
+          All
+        </button>
+      ) : null}
+      {salespeople.map((person) => {
+        const active = activePeople.includes(person);
+        return (
+          <button
+            key={person}
+            type="button"
+            onClick={() => onToggle(person)}
+            aria-pressed={active}
+            className={
+              "flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition-[transform,background-color,border-color,color,box-shadow] active:scale-[0.98] " +
+              (active
+                ? "border-[#b8c1bd] bg-white text-[#25312d] shadow-sm"
+                : "border-transparent bg-[#e8ebe9] text-[#87908d]")
+            }
+          >
+            <span
+              className="h-2.5 w-2.5 rounded-full"
+              style={{
+                backgroundColor: active
+                  ? getSalespersonColor(person)
+                  : "#a9b0ad",
+              }}
+            />
+            {person}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function DealerDirectory({
+  active,
+  dealers,
+  totalDealers,
+  query,
+  onQueryChange,
+  salespeople,
+  activePeople,
+  onTogglePerson,
+  onShowAll,
+  onSelect,
+}: {
+  active: boolean;
+  dealers: Dealer[];
+  totalDealers: number;
+  query: string;
+  onQueryChange: (value: string) => void;
+  salespeople: string[];
+  activePeople: string[];
+  onTogglePerson: (person: string) => void;
+  onShowAll: () => void;
+  onSelect: (dealer: Dealer) => void;
+}) {
+  const visiblePins = new Set(dealers.map((dealer) => dealer.pincode)).size;
+  const visibleReviews = dealers.filter((dealer) => dealer.reviewNote).length;
+
+  return (
+    <section
+      id="dealer-directory-panel"
+      hidden={!active}
+      aria-labelledby="dealer-directory-title"
+      className="h-[calc(100svh-120px)] overflow-y-auto bg-[#eef0ed]"
+    >
+      <div className="mx-auto w-full max-w-[1280px] px-4 py-5 sm:px-6 sm:py-7 lg:px-8">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#73807b]">
+              Dealer directory
+            </p>
+            <h2
+              id="dealer-directory-title"
+              className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-[#18221f] sm:text-3xl"
+            >
+              All dealers
+            </h2>
+            <p className="mt-1 text-sm text-[#68746f]">
+              Review records and open any dealer directly on the territory map.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs font-semibold text-[#596560]">
+            <span className="rounded-full border border-[#d4dad7] bg-white px-3 py-1.5">
+              {dealers.length} of {totalDealers} dealers
+            </span>
+            <span className="rounded-full border border-[#d4dad7] bg-white px-3 py-1.5">
+              {visiblePins} PINs
+            </span>
+            <span
+              className={
+                "rounded-full border px-3 py-1.5 " +
+                (visibleReviews
+                  ? "border-amber-200 bg-amber-50 text-amber-800"
+                  : "border-[#d4dad7] bg-white")
+              }
+            >
+              {visibleReviews} data checks
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-5 rounded-2xl border border-[#d8ddda] bg-white p-3 shadow-[0_8px_24px_rgba(25,38,34,0.05)] sm:p-4">
+          <div className="grid gap-4 lg:grid-cols-[minmax(280px,420px)_minmax(0,1fr)] lg:items-end">
+            <DealerSearch query={query} onChange={onQueryChange} />
+            <div>
+              <p className="mb-2 text-xs font-semibold text-[#65716d]">
+                Salesperson
+              </p>
+              <SalespersonFilters
+                salespeople={salespeople}
+                activePeople={activePeople}
+                onToggle={onTogglePerson}
+                onShowAll={onShowAll}
+              />
+            </div>
+          </div>
+        </div>
+
+        {dealers.length ? (
+          <>
+            <ul className="mt-4 space-y-2 lg:hidden">
+              {dealers.map((dealer) => (
+                <li key={dealer.id}>
+                  <button
+                    type="button"
+                    onClick={() => onSelect(dealer)}
+                    className="flex min-h-20 w-full items-center gap-3 rounded-2xl border border-[#d8ddda] bg-white p-3 text-left shadow-[0_6px_18px_rgba(25,38,34,0.04)] transition-[transform,background-color] active:scale-[0.99]"
+                  >
+                    <span
+                      className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-white shadow-sm"
+                      style={{
+                        backgroundColor: getSalespersonColor(dealer.salesperson),
+                      }}
+                    >
+                      <Building2 className="h-4 w-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5">
+                        <span className="truncate text-sm font-semibold text-[#26312e]">
+                          {dealer.dealer}
+                        </span>
+                        {dealer.reviewNote ? (
+                          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
+                        ) : null}
+                      </span>
+                      <span className="mt-1 block truncate text-xs text-[#76817d]">
+                        {dealer.area} · {dealer.pincode}
+                      </span>
+                      <span className="mt-1 flex items-center gap-1.5 text-[11px] font-semibold text-[#596560]">
+                        <span
+                          className="h-2 w-2 rounded-full"
+                          style={{
+                            backgroundColor: getSalespersonColor(
+                              dealer.salesperson,
+                            ),
+                          }}
+                        />
+                        {dealer.salesperson} · {dealer.state}
+                      </span>
+                    </span>
+                    <ArrowUpRight className="h-4 w-4 shrink-0 text-[#7a8581]" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+
+            <div className="mt-4 hidden overflow-hidden rounded-2xl border border-[#d8ddda] bg-white shadow-[0_8px_24px_rgba(25,38,34,0.05)] lg:block">
+              <table className="w-full border-collapse text-left">
+                <thead className="bg-[#f5f7f5] text-[11px] font-semibold uppercase tracking-[0.08em] text-[#74807c]">
+                  <tr>
+                    <th scope="col" className="px-5 py-3.5">Dealer</th>
+                    <th scope="col" className="px-4 py-3.5">Salesperson</th>
+                    <th scope="col" className="px-4 py-3.5">Area</th>
+                    <th scope="col" className="px-4 py-3.5">PIN</th>
+                    <th scope="col" className="px-4 py-3.5">State</th>
+                    <th scope="col" className="px-4 py-3.5">Status</th>
+                    <th scope="col" className="px-5 py-3.5 text-right">Map</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#e3e7e5]">
+                  {dealers.map((dealer) => (
+                    <tr
+                      key={dealer.id}
+                      className="text-sm text-[#34403c] transition-colors hover:bg-[#f8faf8]"
+                    >
+                      <td className="px-5 py-3.5">
+                        <button
+                          type="button"
+                          onClick={() => onSelect(dealer)}
+                          className="flex items-center gap-3 text-left font-semibold text-[#202b27] outline-none focus-visible:rounded-lg focus-visible:ring-2 focus-visible:ring-[#2f6fe4] focus-visible:ring-offset-2"
+                        >
+                          <span
+                            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-white shadow-sm"
+                            style={{
+                              backgroundColor: getSalespersonColor(
+                                dealer.salesperson,
+                              ),
+                            }}
+                          >
+                            <Building2 className="h-4 w-4" />
+                          </span>
+                          {dealer.dealer}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3.5 font-semibold">
+                        <span className="flex items-center gap-2">
+                          <span
+                            className="h-2.5 w-2.5 rounded-full"
+                            style={{
+                              backgroundColor: getSalespersonColor(
+                                dealer.salesperson,
+                              ),
+                            }}
+                          />
+                          {dealer.salesperson}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3.5">{dealer.area}</td>
+                      <td className="px-4 py-3.5 font-medium tabular-nums">
+                        {dealer.pincode}
+                      </td>
+                      <td className="px-4 py-3.5">{dealer.state}</td>
+                      <td className="px-4 py-3.5">
+                        {dealer.reviewNote ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                            <AlertTriangle className="h-3 w-3" />
+                            Review
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">
+                            <CheckCircle2 className="h-3 w-3" />
+                            Ready
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5 text-right">
+                        <button
+                          type="button"
+                          onClick={() => onSelect(dealer)}
+                          className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-[#173a34] transition-[transform,background-color] active:scale-[0.97] hover:bg-[#e8eeeb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2f6fe4]"
+                          aria-label={`View ${dealer.dealer} on map`}
+                        >
+                          View
+                          <ArrowUpRight className="h-3.5 w-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : (
+          <div className="mt-4 grid min-h-64 place-items-center rounded-2xl border border-dashed border-[#cbd2cf] bg-white px-6 text-center">
+            <div>
+              <CircleDot className="mx-auto mb-3 h-7 w-7 text-[#9ba39f]" />
+              <p className="text-sm font-semibold text-[#26312e]">
+                No dealers match
+              </p>
+              <p className="mt-1 text-xs text-[#76817d]">
+                Clear the search or choose another salesperson.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -873,15 +1225,15 @@ export default function Home() {
   ]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [focusRequest, setFocusRequest] = useState<Dealer | null>(null);
-  const [mobileView, setMobileView] = useState<"map" | "dealers">("map");
+  const [workspaceView, setWorkspaceView] = useState<"map" | "dealers">("map");
 
   useEffect(() => {
-    if (mobileView !== "map") return;
+    if (workspaceView !== "map") return;
     const frame = window.requestAnimationFrame(() => {
       window.dispatchEvent(new Event("resize"));
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [mobileView]);
+  }, [workspaceView]);
 
   useEffect(() => {
     let storedDealers: Dealer[] | null = null;
@@ -927,7 +1279,13 @@ export default function Home() {
       const matchesPerson = activePeople.includes(dealer.salesperson);
       const matchesQuery =
         !normalized ||
-        [dealer.dealer, dealer.area, dealer.pincode, dealer.salesperson]
+        [
+          dealer.dealer,
+          dealer.area,
+          dealer.pincode,
+          dealer.salesperson,
+          dealer.state,
+        ]
           .join(" ")
           .toLowerCase()
           .includes(normalized);
@@ -943,7 +1301,7 @@ export default function Home() {
   const selectDealer = (dealer: Dealer) => {
     setSelectedId(dealer.id);
     setFocusRequest(dealer);
-    setMobileView("map");
+    setWorkspaceView("map");
   };
 
   const togglePerson = (person: string) => {
@@ -953,6 +1311,8 @@ export default function Home() {
         : [...current, person],
     );
   };
+
+  const showAllPeople = () => setActivePeople(salespeople);
 
   const addDealer = (dealer: Omit<Dealer, "id">) => {
     const next = {
@@ -1116,7 +1476,7 @@ export default function Home() {
   }, [dealers]);
 
   return (
-    <main className="h-[100svh] overflow-hidden bg-[#eef0ed] text-[#18221f] lg:h-auto lg:min-h-screen lg:overflow-visible">
+    <main className="h-[100svh] overflow-hidden bg-[#eef0ed] text-[#18221f]">
       <header className="flex h-16 items-center justify-between border-b border-white/10 bg-[#173a34] px-3 text-white sm:px-6 lg:h-[72px]">
         <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#d9f36b] text-[#173a34] shadow-inner sm:h-10 sm:w-10">
@@ -1161,17 +1521,17 @@ export default function Home() {
       </header>
 
       <nav
-        className="grid h-14 grid-cols-2 gap-1.5 border-b border-[#d9dedb] bg-white p-1.5 lg:hidden"
-        aria-label="Mobile view"
+        className="grid h-14 grid-cols-2 gap-1.5 border-b border-[#d9dedb] bg-white p-1.5 lg:flex lg:h-12 lg:items-center lg:justify-center lg:gap-1 lg:px-6 lg:py-1.5"
+        aria-label="Workspace view"
       >
         <button
           type="button"
-          aria-pressed={mobileView === "map"}
-          aria-controls="territory-map-panel"
-          onClick={() => setMobileView("map")}
+          aria-pressed={workspaceView === "map"}
+          aria-controls="map-workspace"
+          onClick={() => setWorkspaceView("map")}
           className={
-            "flex min-h-11 items-center justify-center gap-2 rounded-xl text-sm font-semibold transition-[transform,background-color,color,box-shadow] active:scale-[0.98] " +
-            (mobileView === "map"
+            "flex min-h-11 items-center justify-center gap-2 rounded-xl text-sm font-semibold transition-[transform,background-color,color,box-shadow] active:scale-[0.98] lg:h-9 lg:min-h-0 lg:w-36 lg:rounded-lg " +
+            (workspaceView === "map"
               ? "bg-[#173a34] text-white shadow-sm"
               : "text-[#65716d]")
           }
@@ -1181,12 +1541,12 @@ export default function Home() {
         </button>
         <button
           type="button"
-          aria-pressed={mobileView === "dealers"}
-          aria-controls="dealer-list-panel"
-          onClick={() => setMobileView("dealers")}
+          aria-pressed={workspaceView === "dealers"}
+          aria-controls="dealer-directory-panel"
+          onClick={() => setWorkspaceView("dealers")}
           className={
-            "flex min-h-11 items-center justify-center gap-2 rounded-xl text-sm font-semibold transition-[transform,background-color,color,box-shadow] active:scale-[0.98] " +
-            (mobileView === "dealers"
+            "flex min-h-11 items-center justify-center gap-2 rounded-xl text-sm font-semibold transition-[transform,background-color,color,box-shadow] active:scale-[0.98] lg:h-9 lg:min-h-0 lg:w-36 lg:rounded-lg " +
+            (workspaceView === "dealers"
               ? "bg-[#173a34] text-white shadow-sm"
               : "text-[#65716d]")
           }
@@ -1196,78 +1556,42 @@ export default function Home() {
           <span
             className={
               "rounded-full px-1.5 py-0.5 text-[10px] tabular-nums " +
-              (mobileView === "dealers"
+              (workspaceView === "dealers"
                 ? "bg-white/14 text-white"
                 : "bg-[#e7ece9] text-[#53605b]")
             }
           >
-            {filteredDealers.length}
+            {dealers.length}
           </span>
         </button>
       </nav>
 
-      <div className="grid min-h-[calc(100svh-120px)] grid-cols-1 lg:min-h-[calc(100vh-72px)] lg:grid-cols-[330px_minmax(0,1fr)]">
+      <div
+        id="map-workspace"
+        className={
+          "h-[calc(100svh-120px)] min-h-0 grid-rows-[minmax(0,1fr)] grid-cols-1 overflow-hidden lg:grid-cols-[330px_minmax(0,1fr)] " +
+          (workspaceView === "map" ? "grid" : "hidden")
+        }
+      >
         <aside
-          id="dealer-list-panel"
-          className={
-            "z-10 h-[calc(100svh-120px)] flex-col border-r border-[#d9dedb] bg-[#f7f8f6] lg:flex lg:h-auto lg:max-h-[calc(100vh-72px)] " +
-            (mobileView === "dealers" ? "flex" : "hidden")
-          }
+          id="map-dealer-sidebar"
+          className="z-10 hidden h-full flex-col border-r border-[#d9dedb] bg-[#f7f8f6] lg:flex"
         >
           <div className="border-b border-[#dde2df] p-3 sm:p-4">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#75807c]" />
-              <Input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search dealer, area or PIN"
-                className="h-11 border-[#d7dcda] bg-white pl-9 text-[15px] shadow-none focus-visible:ring-[#2f6fe4]"
-                aria-label="Search dealers"
-              />
-              {query ? (
-                <button
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-1 text-[#75807c] hover:bg-[#eef0ed]"
-                  onClick={() => setQuery("")}
-                  aria-label="Clear search"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              ) : null}
-            </div>
+            <DealerSearch query={query} onChange={setQuery} />
 
             <div className="mt-4">
               <div className="mb-2 flex items-center justify-between text-xs font-semibold text-[#65716d]">
                 <span>Sales coverage</span>
                 <span>{filteredDealers.length} visible</span>
               </div>
-              <div className="scrollbar-none flex gap-2 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible lg:pb-0">
-                {salespeople.map((person) => {
-                  const active = activePeople.includes(person);
-                  return (
-                    <button
-                      key={person}
-                      onClick={() => togglePerson(person)}
-                      aria-pressed={active}
-                      className={
-                        "flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition-[transform,background-color,border-color,color,box-shadow] active:scale-[0.98] " +
-                        (active
-                          ? "border-[#b8c1bd] bg-white text-[#25312d] shadow-sm"
-                          : "border-transparent bg-[#e8ebe9] text-[#87908d]")
-                      }
-                    >
-                      <span
-                        className="h-2.5 w-2.5 rounded-full"
-                        style={{
-                          backgroundColor: active
-                            ? getSalespersonColor(person)
-                            : "#a9b0ad",
-                        }}
-                      />
-                      {person}
-                    </button>
-                  );
-                })}
-              </div>
+              <SalespersonFilters
+                salespeople={salespeople}
+                activePeople={activePeople}
+                onToggle={togglePerson}
+                onShowAll={showAllPeople}
+                showAll={false}
+              />
             </div>
           </div>
 
@@ -1346,10 +1670,7 @@ export default function Home() {
 
         <section
           id="territory-map-panel"
-          className={
-            "relative h-[calc(100svh-120px)] min-h-0 overflow-hidden lg:block lg:h-auto lg:min-h-[56vh] " +
-            (mobileView === "map" ? "block" : "hidden")
-          }
+          className="relative h-full min-h-0 overflow-hidden"
         >
           <TerritoryMap
             dealers={filteredDealers}
@@ -1424,6 +1745,18 @@ export default function Home() {
           </div>
         </section>
       </div>
+      <DealerDirectory
+        active={workspaceView === "dealers"}
+        dealers={filteredDealers}
+        totalDealers={dealers.length}
+        query={query}
+        onQueryChange={setQuery}
+        salespeople={salespeople}
+        activePeople={activePeople}
+        onTogglePerson={togglePerson}
+        onShowAll={showAllPeople}
+        onSelect={selectDealer}
+      />
       <Toaster position="top-center" richColors />
     </main>
   );

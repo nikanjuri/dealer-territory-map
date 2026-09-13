@@ -24,7 +24,7 @@ Design profile: `product`. Use Emil Kowalski design-engineering guidance and Imp
 
 ## Screens and Routes
 
-- `/`: one responsive dashboard containing the summary header, controls, searchable dealer list, map, selection details, add dialog, import dialog, toast feedback, and data-quality warnings.
+- `/`: one responsive dashboard with persistent Map and Dealers workspace views, plus the summary header, controls, selection details, add/import dialogs, toast feedback, and data-quality warnings.
 - Empty state: keep the two-state map visible, explain that grey means unassigned, and offer add/import actions.
 - Loading state: show progress while MapLibre loads or PIN geocoding/import is running.
 - Error state: preserve entered values and provide a concise correction for invalid PINs, unreadable files, missing columns, geocoding failures, and import limits.
@@ -32,7 +32,9 @@ Design profile: `product`. Use Emil Kowalski design-engineering guidance and Imp
 ## Information Architecture
 
 - Header: product identity, state scope, record metrics, and add/import actions.
+- Workspace switch: Map for spatial coverage work; Dealers for complete record review without the sidebar width constraint.
 - Sidebar: search, salesperson legend/filters, dealer results, and selected-dealer details.
+- Dealer directory: shared search and salesperson filters, full record columns on desktop, compact cards on mobile, data-quality status, and direct map focus.
 - Map: state context, PIN-boundary coverage geometry, dealer pins, navigation, attribution, and a clear notice that the territory model can change later.
 - On compact screens, the map opens first and a persistent Map/Dealers switch exposes the searchable list without forcing the primary map below the fold.
 
@@ -75,7 +77,7 @@ Design profile: `product`. Use Emil Kowalski design-engineering guidance and Imp
 ## Components
 
 - MapLibre map with OpenStreetMap raster tiles and required attribution.
-- Search input, salesperson filter chips/rows, dealer result row, metric badge, selected-dealer panel, alert state, dialog, select, input, button, toast, and responsive shell.
+- Workspace switch, search input, salesperson filter chips/rows, responsive dealer table/cards, dealer result row, metric badge, selected-dealer panel, alert state, dialog, select, input, button, toast, and responsive shell.
 - Use the existing shadcn-derived local primitives; do not add a component catalog during ordinary feature work.
 - Record substantially copied external UI in `docs/component-sources.md` before merging it.
 
@@ -98,7 +100,7 @@ Design profile: `product`. Use Emil Kowalski design-engineering guidance and Imp
 
 ## Responsive Behavior
 
-- Compact mobile: map-first viewport with a 44 px minimum Map/Dealers switch, compact icon actions, horizontally scrollable ownership filters, and an independently scrollable dealer list.
+- Compact mobile: map-first viewport with a 44 px minimum Map/Dealers switch, compact icon actions, horizontally scrollable ownership filters, and an independently scrollable dealer-card directory.
 - Tablet: balanced split or stacked layout depending on available width; no clipped filters.
 - Desktop/wide: sidebar and map share the viewport; map is the dominant surface.
 - Never hide state scope, attribution, data warnings, or the distinction between approximate and approved territories.
@@ -143,4 +145,4 @@ PIN-code geometry is authoritative for area coloring in the current model. Deale
 - MapLibre plus OpenStreetMap avoids a required map API key for the prototype, but tile and geocoding usage policies still apply.
 - Client-side import is fast and private to the current browser, but cannot support shared operations or auditability.
 - PIN polygons provide meaningful area coverage now, while remaining replaceable if the sales team later adopts districts, mandals, or custom territories.
-- One dashboard route minimizes navigation during the prototype; administration may become a separate route when permissions and audit workflows are added.
+- One dashboard route with Map and Dealers views preserves filters and selection while avoiding route churn; administration may become separate when permissions and audit workflows are added.

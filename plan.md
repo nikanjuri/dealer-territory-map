@@ -21,6 +21,8 @@ PIN-boundary prototype validation and territory-model refinement.
 - [x] Replace radius-based coverage circles with PIN-code boundary polygons for all nine sample PINs.
 - [x] Load additional PIN boundaries on demand when new dealer PINs are added or imported.
 - [x] Replace the stacked mobile layout with a map-first Map/Dealers workflow and focused dealer bottom card.
+- [x] Add a full Dealers workspace with responsive table/cards, shared filters, record status, and direct map focus.
+- [x] Fix dialog contrast under dark system appearance while keeping the approved light visual system.
 
 ## Current Objective
 
