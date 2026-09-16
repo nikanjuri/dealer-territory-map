@@ -49,6 +49,8 @@ next-env.d.ts
 /public/maplibre-gl-worker.mjs
 /public/maplibre-gl-shared.mjs
 /public/maplibre-gl.LICENSE.txt
+/public/pdf.worker.min.mjs
+/public/pdfjs.LICENSE.txt
 .env
 .env.local
 .env.*.local

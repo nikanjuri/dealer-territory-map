@@ -12,6 +12,9 @@
 ```bash
 npm run install:ci
 npm run dev
+npm run db:generate
+npm run db:migrate
+npm run db:seed
 npm run lint
 npm run typecheck
 npm run build
@@ -21,6 +24,7 @@ npm run verify
 - Local web URL: `http://localhost:5740`
 - Package manager and lockfile authority: npm and `package-lock.json`
 - Node.js requirement: `>=22.13.0`
+- Runtime environment: pull Vercel development variables into ignored `.env.local`; a browser-restricted `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` enables Google Maps, otherwise the MapLibre fallback remains active.
 
 ## Product and Data Rules
 
@@ -30,7 +34,11 @@ npm run verify
 - Preserve source values and surface PIN/area conflicts for human review; do not silently correct them.
 - Keep salesperson colors stable and provide textual ownership labels because color alone is insufficient.
 - The hosted app is public; use only sample or approved non-sensitive dealer and employee assignment data until authentication exists.
-- Exact addresses are required before implementing route optimization.
+- Road-aware routes should use reviewed address-level dealer locations. Approximate PIN points may enter only an explicitly labelled preview after user opt-in.
+- Salespeople alone create/optimize their own routes and update visits. Administrators may read team route activity but must not receive route-operation controls or write access.
+- Shared dealer APIs require an authenticated Neon session; never add an unauthenticated write path for convenience.
+- Salesperson passwords belong only in Neon Auth request bodies. Never persist, return, log, or prefill them; administrator reset replaces the password and revokes existing sessions.
+- Treat dealer name plus PIN, or the same dealer name at the same full address, as one workspace-wide record with one salesperson owner. Reassign the existing row explicitly; never duplicate it to represent shared ownership.
 
 ## Implementation Conventions
 
@@ -53,6 +61,8 @@ npm run verify
 
 - Do not provision a database, modify hosted data, change access policy, publish a deployment, or push to a remote without explicit user intent.
 - Vercel is the selected provider; keep `.vercel/` local and never commit provider credentials or linkage state.
+- Neon is the Postgres and authentication provider. Drizzle migrations under `drizzle/` are the only application-schema migration authority.
+- Google Maps browser keys must be HTTP-referrer restricted. Server-side route credentials must stay server-only and must not be reused in client code.
 - Never commit credentials, `.env*` secrets, local provider state, or browser-derived authentication data.
 - Avoid force-pushes, destructive resets, and silent territory reassignment.
 

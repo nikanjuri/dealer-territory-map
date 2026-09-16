@@ -4,10 +4,19 @@ export type Dealer = {
   dealer: string;
   pincode: string;
   area: string;
+  address?: string;
   state: "Telangana" | "Andhra Pradesh";
   latitude: number;
   longitude: number;
+  locationPrecision?: "address" | "pincode";
+  googlePlaceId?: string;
+  geocodedAddress?: string;
   reviewNote?: string;
+  postalSuggestions?: string[];
+  validationStatus?: "verified" | "review" | "invalid" | "unavailable";
+  validationSource?: "postal-directory" | "manual";
+  validationCheckedAt?: string;
+  validationDataset?: string;
 };
 
 export const SALESPERSON_COLORS: Record<string, string> = {

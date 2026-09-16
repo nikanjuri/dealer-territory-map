@@ -5,7 +5,7 @@
     "verify_command": null
   },
   "created_at": "2026-09-12T10:39:44+00:00",
-  "database": "none",
+  "database": "neon",
   "deploy": "vercel",
   "design": {
     "authority": "design.md",
@@ -19,12 +19,15 @@
     "web_port": 5740,
     "web_url": "http://localhost:5740"
   },
-  "profile": "public-static",
+  "profile": "public-postgres",
   "project": "dealer-territory-map",
   "providers": {
+    "authentication": "linked:neon-auth;username-app-accounts;admin-salesperson-scopes",
+    "google_maps": "linked:browser-key-restricted;routes-server-key-restricted;routes-daily-quota-1000",
+    "neon": "linked:store_j1m38objMwSrS3Gj",
     "vercel": "linked:prj_iJ7BL6BwaoD0v7gq6QWxyDO9FcZX"
   },
   "repo": "/Users/nikhilanjuri/GitHub/dealer-territory-map",
   "schema_version": 2,
-  "updated_at": "2026-09-12T11:23:53+00:00"
+  "updated_at": "2026-09-15T17:45:00+05:30"
 }

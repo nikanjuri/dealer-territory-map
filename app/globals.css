@@ -129,3 +129,10 @@ body {
   color: #56615d;
   font-size: 10px;
 }
+
+.dealer-place-autocomplete {
+  display: block;
+  width: 100%;
+  min-height: 2.25rem;
+  color-scheme: light;
+}
