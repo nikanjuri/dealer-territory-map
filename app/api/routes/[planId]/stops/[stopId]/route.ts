@@ -32,12 +32,19 @@ export async function PATCH(
     return Response.json({ error: "Invalid visit update." }, { status: 400 });
   }
 
-  const updated = await updateRouteStopStatus({
-    ...ids.data,
-    ...body.data,
-    userId: session.userId,
-    allowedSalespersonId: session.salespersonId,
-  });
+  let updated;
+  try {
+    updated = await updateRouteStopStatus({
+      ...ids.data,
+      ...body.data,
+      userId: session.userId,
+      allowedSalespersonId: session.salespersonId,
+    });
+  } catch (error) {
+    return Response.json({
+      error: error instanceof Error ? error.message : "Visit update failed.",
+    }, { status: 409 });
+  }
   if (!updated) {
     return Response.json({ error: "Route stop not found." }, { status: 404 });
   }

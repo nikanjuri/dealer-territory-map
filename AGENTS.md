@@ -14,7 +14,8 @@ npm run install:ci
 npm run dev
 npm run db:generate
 npm run db:migrate
-npm run db:seed
+npm run db:migrate:amit-retail
+npm run db:normalize-dealers
 npm run lint
 npm run typecheck
 npm run build
@@ -30,7 +31,8 @@ npm run verify
 
 - Do not present dealer points or 12 km PIN-centroid circles as official salesperson territories.
 - Territory fill requires approved polygon geometry and an explicit assignment rule.
-- Keep unassigned areas grey only when the geographic boundary set is complete.
+- Treat the grey state outlines as neutral geographic context. A slate PIN with
+  an amber outline means dealers in that PIN belong to multiple salespeople.
 - Preserve source values and surface PIN/area conflicts for human review; do not silently correct them.
 - Keep salesperson colors stable and provide textual ownership labels because color alone is insufficient.
 - The hosted app is public; use only sample or approved non-sensitive dealer and employee assignment data until authentication exists.
@@ -39,6 +41,13 @@ npm run verify
 - Shared dealer APIs require an authenticated Neon session; never add an unauthenticated write path for convenience.
 - Salesperson passwords belong only in Neon Auth request bodies. Never persist, return, log, or prefill them; administrator reset replaces the password and revokes existing sessions.
 - Treat dealer name plus PIN, or the same dealer name at the same full address, as one workspace-wide record with one salesperson owner. Reassign the existing row explicitly; never duplicate it to represent shared ownership.
+- Use the shared username/password login for retailers, salespeople, operations staff, and administrators; do not add OTP or public self-registration.
+- Roles are additive: a salesperson may also have operations-staff access without a second account. Operations access must not grant territory or account-administration authority.
+- Link each retailer account to an existing dealer record. Retailers may read and create orders only for that linked dealer.
+- Never trust product prices, totals, fulfillment status, or dealer identity from the browser. Resolve prices and ownership server-side and create the order plus items atomically.
+- Supabase is a one-time migration source only, never an application runtime dependency. Keep the importer dry-run-first and idempotent, and preserve legacy IDs for reconciliation.
+- Do not copy Supabase OTP identities or manufacture replacement passwords. Stage unmatched legacy retailers and require an explicit canonical dealer plus Neon Auth account decision.
+- Store commerce image bytes behind authenticated handlers, preserve source URLs during migration, and enforce the documented upload/import size limits.
 
 ## Implementation Conventions
 

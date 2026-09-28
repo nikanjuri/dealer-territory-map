@@ -1,4 +1,5 @@
 import { getAppSession, isAdmin } from "@/lib/authorization";
+import { canAccessFieldWorkspace } from "@/lib/access-contract";
 import {
   createDealerRecord,
   createDealerRecords,
@@ -7,6 +8,7 @@ import {
   listDealerRecords,
 } from "@/lib/dealer-records";
 import { dealerInputSchema } from "@/lib/dealer-contract";
+import { validateDealerLocations } from "@/lib/dealer-location-validation";
 
 export const dynamic = "force-dynamic";
 
@@ -15,10 +17,14 @@ export async function GET() {
   if (!session) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (!canAccessFieldWorkspace(session)) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (!isAdmin(session) && session.salespersonId === null) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
   return Response.json({
-    dealers: await listDealerRecords(
-      session.role === "salesperson" ? session.salespersonId : null,
-    ),
+    dealers: await listDealerRecords(isAdmin(session) ? null : session.salespersonId),
   });
 }
 
@@ -46,6 +52,20 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
+    let locationIssues;
+    try {
+      locationIssues = await validateDealerLocations(parsed.data);
+    } catch {
+      return Response.json({ error: "PIN boundaries could not be checked. Try the import again." }, { status: 503 });
+    }
+    if (locationIssues.length) {
+      const first = locationIssues[0];
+      const more = locationIssues.length > 1 ? ` ${locationIssues.length - 1} more row(s) need review.` : "";
+      return Response.json({
+        error: `Dealer row ${first.index + 1}: ${first.message}${more}`,
+        locationIssues,
+      }, { status: 422 });
+    }
     return Response.json(await createDealerRecords(parsed.data), { status: 201 });
   }
 
@@ -55,6 +75,15 @@ export async function POST(request: Request) {
       { error: "Invalid dealer.", issues: parsed.error.flatten() },
       { status: 400 },
     );
+  }
+  let locationIssues;
+  try {
+    locationIssues = await validateDealerLocations([parsed.data]);
+  } catch {
+    return Response.json({ error: "PIN boundaries could not be checked. Try again." }, { status: 503 });
+  }
+  if (locationIssues.length) {
+    return Response.json({ error: locationIssues[0].message, locationIssues }, { status: 422 });
   }
   const duplicate = await findDealerDuplicate(parsed.data);
   if (duplicate) {

@@ -1,4 +1,7 @@
-export type PostalState = "Telangana" | "Andhra Pradesh";
+import type { IndianState } from "./indian-states";
+import { canonicalizeAreaName } from "./area-normalization.ts";
+
+export type PostalState = IndianState;
 
 export type PostalDirectoryEntry = {
   state: PostalState;
@@ -16,10 +19,11 @@ export type PostalDirectory = {
     deliveryMirror: string;
     license: string;
     sourceSha256: string;
+    scope?: "India";
   };
   records: Record<
     string,
-    Partial<Record<PostalState, PostalDirectoryEntry>>
+    Partial<Record<IndianState, PostalDirectoryEntry>>
   >;
 };
 
@@ -35,6 +39,18 @@ export type PostalValidationResult = {
   suggestions: string[];
   matchedName?: string;
   datasetVersion?: string;
+};
+
+export type PostalAutoVerificationReason =
+  | "exact-district"
+  | "spacing-equivalent"
+  | "postal-name-with-qualifiers"
+  | "high-confidence-spelling";
+
+export type PostalAutoVerificationMatch = {
+  matchedName: string;
+  reason: PostalAutoVerificationReason;
+  score: number;
 };
 
 export function normalizePostalName(value: string) {
@@ -85,6 +101,92 @@ function uniqueUsefulNames(values: string[]) {
   });
 }
 
+export function findAutoVerifiablePostalMatch(
+  entry: PostalDirectoryEntry,
+  area: string,
+): PostalAutoVerificationMatch | null {
+  const normalizedArea = normalizePostalName(canonicalizeAreaName(area));
+  if (!normalizedArea) return null;
+
+  const candidates = [
+    ...uniqueUsefulNames([...entry.offices, ...entry.blocks]).map((value) => ({
+      value,
+      normalized: normalizePostalName(value),
+      kind: "postal" as const,
+    })),
+    ...uniqueUsefulNames(entry.districts).map((value) => ({
+      value,
+      normalized: normalizePostalName(value),
+      kind: "district" as const,
+    })),
+  ];
+  const uniqueCandidates = [
+    ...new Map(candidates.map((candidate) => [candidate.normalized, candidate])).values(),
+  ];
+
+  const exactDistrict = uniqueCandidates.find(
+    (candidate) =>
+      candidate.kind === "district" && candidate.normalized === normalizedArea,
+  );
+  if (exactDistrict) {
+    return {
+      matchedName: exactDistrict.value,
+      reason: "exact-district",
+      score: 1,
+    };
+  }
+
+  const compactArea = normalizedArea.replaceAll(" ", "");
+  const compactMatches = uniqueCandidates.filter(
+    (candidate) => candidate.normalized.replaceAll(" ", "") === compactArea,
+  );
+  if (compactMatches.length === 1) {
+    return {
+      matchedName: compactMatches[0].value,
+      reason: "spacing-equivalent",
+      score: 1,
+    };
+  }
+
+  const qualifiedPostalMatches = uniqueCandidates
+    .filter(
+      (candidate) =>
+        candidate.kind === "postal" &&
+        candidate.normalized.length >= 5 &&
+        (normalizedArea.startsWith(`${candidate.normalized} `) ||
+          normalizedArea.endsWith(` ${candidate.normalized}`)),
+    )
+    .sort((left, right) => right.normalized.length - left.normalized.length);
+  if (qualifiedPostalMatches.length) {
+    return {
+      matchedName: qualifiedPostalMatches[0].value,
+      reason: "postal-name-with-qualifiers",
+      score: 1,
+    };
+  }
+
+  const ranked = uniqueCandidates
+    .map((candidate) => ({
+      ...candidate,
+      score: similarity(normalizedArea, candidate.normalized),
+    }))
+    .sort((left, right) => right.score - left.score);
+  const closest = ranked[0];
+  const runnerUp = ranked[1];
+  if (
+    normalizedArea.length >= 5 &&
+    closest?.score >= 0.9 &&
+    closest.score - (runnerUp?.score ?? 0) >= 0.08
+  ) {
+    return {
+      matchedName: closest.value,
+      reason: "high-confidence-spelling",
+      score: closest.score,
+    };
+  }
+  return null;
+}
+
 export function validatePostalDetails(
   directory: PostalDirectory,
   pincode: string,
@@ -94,9 +196,19 @@ export function validatePostalDetails(
   const datasetVersion = directory.meta.sourceSha256;
   const entries = directory.records[pincode];
   if (!entries) {
+    const coveredState =
+      directory.meta.scope === "India" ||
+      state === "Telangana" ||
+      state === "Andhra Pradesh" ||
+      state === "Karnataka";
     return {
-      status: "invalid",
-      message: `PIN ${pincode} is not present in the Telangana and Andhra Pradesh postal directory.`,
+      status: coveredState ? "invalid" : "unavailable",
+      message:
+        coveredState
+          ? directory.meta.scope === "India"
+            ? `PIN ${pincode} is not present in the all-India postal directory.`
+            : `PIN ${pincode} is not present in the Telangana, Andhra Pradesh, and Karnataka postal directory.`
+          : `Automatic postal validation for ${state} is not available in this browser dataset. Confirm this PIN and area manually.`,
       suggestions: [],
       datasetVersion,
     };
@@ -113,7 +225,8 @@ export function validatePostalDetails(
     };
   }
 
-  const normalizedArea = normalizePostalName(area);
+  const canonicalArea = canonicalizeAreaName(area);
+  const normalizedArea = normalizePostalName(canonicalArea);
   const candidates = uniqueUsefulNames([...entry.offices, ...entry.blocks]);
   const exactMatch = candidates.find(
     (candidate) => normalizePostalName(candidate) === normalizedArea,
@@ -121,9 +234,24 @@ export function validatePostalDetails(
   if (exactMatch) {
     return {
       status: "verified",
-      message: `${area.trim()} matches the postal directory for PIN ${pincode}.`,
+      message:
+        canonicalArea === area.trim()
+          ? `${area.trim()} matches the postal directory for PIN ${pincode}.`
+          : `${area.trim()} normalizes to ${canonicalArea} and matches the postal directory for PIN ${pincode}.`,
       suggestions: [],
       matchedName: exactMatch,
+      datasetVersion,
+    };
+  }
+
+
+  const autoMatch = findAutoVerifiablePostalMatch(entry, canonicalArea);
+  if (autoMatch) {
+    return {
+      status: "verified",
+      message: `${area.trim()} is a high-confidence match for ${autoMatch.matchedName} at PIN ${pincode}.`,
+      suggestions: [],
+      matchedName: autoMatch.matchedName,
       datasetVersion,
     };
   }

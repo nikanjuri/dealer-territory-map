@@ -2,15 +2,40 @@
 
 ## Current Phase
 
-Daily route planning and visit operations.
+Unified field operations and dealer ordering.
+
+## 2026-09-26 local implementation checkpoint
+
+- [x] Add a Today-first salesperson route view and a reviewable seven-day visit suggestion; keep Google Routes responsible for each day's actual driving order.
+- [x] Show visit recency and next-due information in the dealer map detail, and add a copyable, authenticated Map/Dealers filter view.
+- [x] Queue visit status changes on the current device when the network fails, retry them online, and expose conflict/discard recovery.
+- [x] Make stop/visit/due-date updates one atomic, retry-safe database statement. Verify completion and replay against disposable local Postgres.
+- [x] Add idempotency keys to route saves and retailer orders; retain an order retry key across same-tab reloads.
+- [x] Change dealer Undo to cancel a pending delete before it reaches the server, preserving the dealer's original ID.
+- [x] Require a selected and reviewed Google place for new address-level pins; typed-only addresses may be explicitly saved with a PIN-level pin.
+- [x] Batch route-stop reads and expose `Server-Timing` for workspace and directory requests.
+- [x] Apply migration `0008` to the approved existing Neon database (2026-09-28). Verify an application-schema backup restored into disposable Postgres 18, compare already-present `0006`/`0007` schema before reconciling their missing journal entries, preserve all application-table data, and verify a repeated Drizzle migration is a no-op. Development and production share the target; authenticated role QA remains required before deploying the matching code. See `docs/audits/DATABASE_MIGRATION_2026-09-28.md`.
+- [ ] Run authenticated administrator, salesperson, and retailer desktop/mobile QA with representative data and measure real workspace timings. On 2026-09-28, existing administrator sign-in, all five tab reads, mobile identity, directory search, and edit-form loading were checked. Salesperson sign-in, own-dealer UI, a cross-owner dealer read denial, mobile identity and route prerequisites were also checked after corrected credentials were supplied. Retailer/catalog fixtures remain missing; road-routing previews, route/visit/order writes and offline replay are not cleared. See `docs/audits/AUTHENTICATED_QA_2026-09-28.md`.
 
 ## Completed
+
+- [x] Integrate the retailer catalog, cart, order history, and commerce operations workflows into the Next.js app.
+- [x] Expand the shared username/password access model to retailer, salesperson, operations-staff, and administrator roles.
+- [x] Allow additive salesperson plus operations-staff access without creating a second login.
+- [x] Link retailer accounts to canonical dealer records and enforce dealer-scoped order reads.
+- [x] Reprice checkout server-side and save each order with its items atomically.
+- [x] Add administrator workflows for retailer/operations accounts and commerce access grants.
+- [x] Add guarded Commerce account deletion that revokes sign-in while retaining historical orders; Team identities remain protected.
+- [x] Add Team login deletion that removes the shared account and Commerce access while preserving the salesperson, assignments, routes, and visits.
+- [x] Integrate field operations, commerce operations, and retailer ordering into one role-aware root workspace; retain `/commerce` and `/shop` only as compatibility redirects.
+- [x] Split the root workspace into first-open tab payloads, defer postal/review data, paginate large dealer results, and stop rebuilding every Google marker when only selection changes.
 
 - [x] Replace email-facing sign-in with usernames and disable public self-registration.
 - [x] Add administrator-managed salesperson accounts and server-enforced salesperson scoping for dealers, routes, and visit updates.
 - [x] Add per-salesperson Team actions for login setup and administrator password reset.
 - [x] Separate salesperson route operations from administrator read-only route oversight in both UI and APIs.
 - [x] Keep route re-optimization warnings in the salesperson workflow instead of the administrator Activity view.
+- [x] Replace the administrator's single-route Activity viewer with a date-filtered, attention-ranked team dashboard, embedded route detail, and visible refresh recency.
 - [x] Remove obsolete Google Routes configuration errors once routing is ready while preserving valid location-quality warnings.
 - [x] Simplify salesperson Map and Dealers filters by removing redundant cross-team salesperson controls.
 - [x] Prevent workspace-wide dealer/PIN duplicates and direct administrators to reassign the existing record.
@@ -57,13 +82,28 @@ Daily route planning and visit operations.
 - [x] Add route-flow tests for Google request/response mapping, workday fit, stop scheduling, and Maps handoff segmentation.
 - [x] Split route optimization from persistence with a signed map-and-stop review preview before Save route.
 - [x] Remove the redundant salesperson planner selector, clarify route lifecycle headings, and add last-used/current/manual start-location choices.
+- [x] Audit role-specific Map, Dealers, Routes, Activity, and Team views; add textual map ownership, scalable Team filters, 44 px touch targets, a saved-route map, and a tested 25-stop selection guard.
 
 ## Current Objective
 
-Validate the hardened road-aware daily planning workflow with reviewed, exact dealer locations.
+Complete the retailer-ordering cutover to Neon, then validate the hardened road-aware daily planning workflow with reviewed, exact dealer locations.
 
 ## Next Work
 
+- [x] Apply the commerce schema through Drizzle, including categories, products, variants, product images, retailer links, immutable order items, and legacy reconciliation records.
+- [x] Replace the Supabase runtime with authenticated Neon route handlers, Neon Auth username/password access, polling-based new-order alerts, and optional server-side Twilio notifications.
+- [x] Align Commerce navigation, form controls, content width, and card styling with the shared workspace UI.
+- [x] Standardize native, searchable, single-select, and multi-select dropdowns across Map, Dealers, Activity, Team, Commerce, and Shop.
+- [x] Replace native Activity and route-planning date inputs with the shared app-styled calendar control.
+- [x] Replace the sports-like green/lime visual identity with the selected ink-indigo, terracotta, parchment, and denim retail-operations palette across every role workspace.
+- [x] Implement the three-phase target-experience UI pass: searchable Commerce entity selectors, focused product/account creation, actionable Commerce states, compact mobile Dealer filters, discoverable keyboard-correct workspace navigation, AA helper-text/avatar contrast, and explicit reduced-motion-safe primitive transitions.
+- [x] Migrate dealer pins and route-preview stops to accessible Google Advanced Markers with a development-only demo map ID and a production-safe legacy fallback.
+- [ ] Create a project-owned Google Maps JavaScript map ID, set `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` in the linked Vercel environments, and reverify the deployed map before removing the legacy fallback.
+- [x] Add an idempotent, dry-run-first Supabase-to-Neon importer that preserves legacy IDs, timestamps, prices, order history, retailer metadata, and product image bytes.
+- [ ] Recover an export or service-role connection for the legacy `amit-retail` Supabase project and run the importer; its configured project URL no longer resolves and the project is not visible in the currently authenticated Supabase account.
+- [ ] Reconcile every staged legacy retailer to a canonical dealer and a deliberately created Neon Auth username/password account; never match shops by name alone or manufacture passwords.
+- [ ] Exercise retailer, salesperson-plus-operations, operations-only, and administrator journeys against an isolated migrated database.
+- [ ] Configure Twilio server credentials and verify order-created and status-change WhatsApp delivery in a non-production recipient flow.
 - [x] Use PIN boundaries as the initial territory model.
 - [x] Record the boundary source and license provenance.
 - [ ] Confirm whether the two `500004` dealer areas intentionally share one Chander-owned PIN territory.
@@ -102,6 +142,10 @@ Validate the hardened road-aware daily planning workflow with reviewed, exact de
 - [x] Google Maps rendering is verified after a restricted browser key is configured.
 - [x] A live `ComputeRoutes` request succeeds through the Routes-only server credential.
 - [x] Route contract tests cover planned departure, Google stop-order mapping, service-time scheduling, workday overruns, and mobile-safe Maps segmentation.
+- [x] Commerce contract tests cover category validation, multiple images, product variants, order quantities/statuses, and account activation.
+- [x] All commerce migrations through `0005` are applied to the configured Neon database.
+- [ ] Legacy Supabase source and Neon target counts, image bytes, totals, and representative order histories match after the one-time import.
+- [ ] Retailer, operations-staff, dual-role salesperson/staff, and administrator commerce journeys are visually and behaviorally verified.
 - [ ] A salesperson completes a fresh exact-address route end to end in the local UI without changing production records.
 - [ ] The Vercel preview and production deployments are reverified after territory-model changes.
 
@@ -116,10 +160,12 @@ Validate the hardened road-aware daily planning workflow with reviewed, exact de
 - Neon Auth and the current Google Maps loader integration are provider dependencies that need monitoring and a documented recovery owner.
 - Route optimization is billable and must be protected by server-side credentials, quotas, and role checks.
 - The app-layer duplicate check is active locally; the generated database uniqueness migration must ship with the matching API deployment to provide race-safe enforcement.
+- The original Supabase project is currently unreachable, so zero imported commerce rows proves only that the target is empty; it does not prove the source had no data.
+- Product image bytes are stored in Neon Postgres to keep this cutover Neon-only. The 4 MB administrative upload limit and 12 MB migration limit must remain enforced until a reviewed object-storage decision is made.
 
 ## Deployment Gates
 
 - The Vercel deployment is a public prototype, not a production system of record; use only sample or approved non-sensitive data.
 - Apply future schema migrations only with an explicit project decision and a verified backup/recovery path.
-- The linked Neon database currently contains only the ten sample rows; do not upload browser-local or operational data implicitly.
+- The linked Neon database has the commerce schema but currently contains no recovered legacy commerce rows. Do not delete `amit-retail` or retire any remaining Supabase backup until source counts and representative records are reconciled, or the owner explicitly confirms that the source contained no data.
 - Do not claim production readiness until territory geometry, persistence, access control, backups, and operational ownership are verified.

@@ -1,15 +1,18 @@
 "use client";
 
 import {
+  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
   useState,
   type ChangeEvent,
   type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 import {
   AlertTriangle,
@@ -34,6 +37,8 @@ import {
   Plus,
   Route as RouteIcon,
   Search,
+  ShoppingBag,
+  Store,
   SlidersHorizontal,
   Trash2,
   Upload,
@@ -42,6 +47,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { GooglePlaceAutocomplete, type GooglePlaceSelection } from "@/components/google-place-autocomplete";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -78,16 +84,29 @@ import {
 } from "@/components/ui/select";
 import { Toaster } from "@/components/ui/sonner";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  dropdownContentClass,
+  dropdownItemClass,
+  dropdownSearchClass,
+  dropdownTriggerClass,
+} from "@/components/ui/dropdown-styles";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { importGoogleMapsLibrary } from "@/lib/google-maps-loader";
+import { resolveGoogleMapsMapId } from "@/lib/google-maps-config";
+import type { DealerSummary } from "@/lib/dealer-summary";
+import { dealerFilterKey, pageForFilterRevision } from "@/lib/dealer-pagination";
+import { pointInsidePinFeature } from "@/lib/dealer-geography";
+import { validateSelectedDealerPlace } from "@/lib/dealer-place-validation";
 import {
-  INITIAL_DEALERS,
-  getSalespersonColor,
-  type Dealer,
-} from "./dealers";
+  cachedPincodeBoundaries,
+  loadInitialPincodeBoundaries,
+  loadMissingPincodeBoundaries,
+  type PincodeBoundaryData,
+} from "@/lib/pincode-boundaries";
+import { getSalespersonColor, type Dealer } from "./dealers";
+import { canonicalizeAreaName } from "@/lib/area-normalization";
 import {
-  loadPostalDirectory,
-  validatePostalDetails,
   validatePostalDetailsFromApp,
   type PostalValidationResult,
 } from "@/lib/postal-validation";
@@ -104,23 +123,61 @@ import {
 } from "@/lib/import-normalization";
 import {
   filterDealerRecords,
+  type DealerFilters,
   type QualityFilter,
   type StateFilter,
 } from "@/lib/dealer-filters";
+import { readDealerViewUrl, writeDealerViewUrl } from "@/lib/dealer-view-link";
 import {
   createDealer,
   createDealers,
+  fetchDealerDetail,
+  fetchDealerDirectoryPage,
   removeDealer,
   saveDealer,
 } from "@/lib/dealer-api";
 import { authClient } from "@/lib/auth-client";
-import { RoutesWorkspace } from "@/components/routes-workspace";
-import { TeamWorkspace } from "@/components/team-workspace";
+import { INDIAN_STATES, normalizeIndianState } from "@/lib/indian-states";
 import type { AppSession, SalespersonAccount } from "@/lib/access-contract";
 import {
   ApiRequestError,
+  fetchCommerceWorkspaceBootstrap,
+  fetchShopWorkspaceBootstrap,
+  fetchAppSession,
   fetchWorkspaceBootstrap,
+  invalidateWorkspaceBootstraps,
+  type CommerceWorkspaceBootstrap,
+  type ShopWorkspaceBootstrap,
 } from "@/lib/session-api";
+
+const RoutesWorkspace = dynamic(() =>
+  import("@/components/routes-workspace").then(
+    (module) => module.RoutesWorkspace,
+  ),
+);
+const TeamWorkspace = dynamic(() =>
+  import("@/components/team-workspace").then(
+    (module) => module.TeamWorkspace,
+  ),
+);
+const DealerReviewQueue = dynamic(() =>
+  import("@/components/dealer-review-queue").then(
+    (module) => module.DealerReviewQueue,
+  ),
+);
+
+const CommerceWorkspace = dynamic(() =>
+  import("@/components/commerce-workspace").then(
+    (module) => module.CommerceWorkspace,
+  ),
+);
+const ShopWorkspace = dynamic(() =>
+  import("@/components/shop-workspace").then(
+    (module) => module.ShopWorkspace,
+  ),
+);
+
+type WorkspaceView = "map" | "dealers" | "routes" | "team" | "commerce" | "shop";
 
 type MapData = {
   type: "FeatureCollection";
@@ -130,18 +187,6 @@ type MapData = {
     geometry: {
       type: "Point" | "Polygon" | "MultiPolygon";
       coordinates: number[] | number[][][] | number[][][][];
-    };
-  }>;
-};
-
-type PincodeBoundaryData = {
-  type: "FeatureCollection";
-  features: Array<{
-    type: "Feature";
-    properties: Record<string, string | number | boolean | null>;
-    geometry: {
-      type: "Polygon" | "MultiPolygon";
-      coordinates: number[][][] | number[][][][];
     };
   }>;
 };
@@ -187,36 +232,19 @@ type WebMcpContext = {
   ) => void | Promise<void>;
 };
 
-const PIN_COORDINATES: Record<string, [number, number]> = Object.fromEntries(
-  INITIAL_DEALERS.map((dealer) => [
-    dealer.pincode,
-    [dealer.longitude, dealer.latitude],
-  ]),
-);
-
-const PIN_BOUNDARY_SERVICE =
-  "https://livingatlas.esri.in/server1/rest/services/India/Pincode_Boundary_2025/MapServer/0/query";
-
-async function fetchPincodeBoundaries(
-  pincodes: string[],
-  signal?: AbortSignal,
-): Promise<PincodeBoundaryData> {
-  const safePincodes = [...new Set(pincodes.filter((pin) => /^\d{6}$/.test(pin)))];
-  if (!safePincodes.length) return { type: "FeatureCollection", features: [] };
-  const parameters = new URLSearchParams({
-    where:
-      "pin_code IN (" + safePincodes.map((pin) => `'${pin}'`).join(",") + ")",
-    outFields: "pin_code,fname,state,circle,region,division",
-    returnGeometry: "true",
-    outSR: "4326",
-    f: "geojson",
-  });
-  const response = await fetch(PIN_BOUNDARY_SERVICE + "?" + parameters, {
-    signal,
-  });
-  if (!response.ok) throw new Error("PIN boundaries could not be loaded.");
-  return (await response.json()) as PincodeBoundaryData;
-}
+// Low-volume fallbacks for PINs already present in the source workbook. These
+// are location hints only; they are not dealer seed records.
+const PIN_COORDINATES: Record<string, [number, number]> = {
+  "500001": [78.4722552, 17.3988564],
+  "500004": [78.4620369, 17.4036318],
+  "500007": [78.5308281, 17.417663],
+  "500070": [78.5733135, 17.3330243],
+  "506001": [79.561234, 18.0034235],
+  "506002": [79.6025426, 17.9772682],
+  "508001": [79.268293, 17.0582113],
+  "508213": [79.625106, 17.1426695],
+  "509209": [78.3756056, 16.4808],
+};
 
 async function locateDealer({
   address,
@@ -224,6 +252,15 @@ async function locateDealer({
   pincode,
   state,
 }: Pick<Dealer, "address" | "area" | "pincode" | "state">) {
+  if (!address?.trim()) {
+    await loadMissingPincodeBoundaries([pincode], () => {});
+    const feature = cachedPincodeBoundaries().features.find((candidate) =>
+      String(candidate.properties.pin_code ?? "") === pincode &&
+      normalizeIndianState(String(candidate.properties.state ?? "")) === state);
+    const coordinates = feature && pointInsidePinFeature(feature);
+    if (!coordinates) return null;
+    return { coordinates, precision: "pincode" as const };
+  }
   return geocodeDealerLocation({
     address,
     area,
@@ -233,16 +270,92 @@ async function locateDealer({
   });
 }
 
+async function locateDealerForForm({
+  address,
+  area,
+  pincode,
+  state,
+  selectedPlace,
+  confirmedPlace,
+  allowApproximate,
+}: Pick<Dealer, "address" | "area" | "pincode" | "state"> & {
+  selectedPlace: GooglePlaceSelection | null;
+  confirmedPlace: boolean;
+  allowApproximate: boolean;
+}): Promise<{ location: GeocodedLocation | null; error: string | null }> {
+  if (!address?.trim() || !selectedPlace) {
+    if (address?.trim() && !allowApproximate) {
+      return { location: null, error: "Choose a Google address suggestion and confirm its pin, or explicitly save this address with an approximate PIN-code pin." };
+    }
+    return { location: await locateDealer({ address: undefined, area, pincode, state }), error: null };
+  }
+  if (!confirmedPlace) {
+    return { location: null, error: "Open the selected pin in Google Maps and confirm its location before saving." };
+  }
+  try {
+    await loadMissingPincodeBoundaries([pincode], () => {});
+  } catch {
+    // The selected place must still pass Google postal/state checks below.
+  }
+  const boundary = cachedPincodeBoundaries().features.find((candidate) =>
+    String(candidate.properties.pin_code ?? "") === pincode &&
+    normalizeIndianState(String(candidate.properties.state ?? "")) === state) ?? null;
+  const error = validateSelectedDealerPlace(selectedPlace, pincode, state, boundary);
+  if (error) return { location: null, error };
+  return {
+    location: {
+      coordinates: [selectedPlace.longitude, selectedPlace.latitude],
+      precision: "address",
+      resolvedAddress: selectedPlace.address,
+    },
+    error: null,
+  };
+}
+
+function DealerPlaceConfirmation({
+  address,
+  selectedPlace,
+  confirmedPlace,
+  onConfirmedPlaceChange,
+  allowApproximate,
+  onAllowApproximateChange,
+}: {
+  address: string;
+  selectedPlace: GooglePlaceSelection | null;
+  confirmedPlace: boolean;
+  onConfirmedPlaceChange: (value: boolean) => void;
+  allowApproximate: boolean;
+  onAllowApproximateChange: (value: boolean) => void;
+}) {
+  if (!address.trim()) return null;
+  if (!selectedPlace) return <label className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950">
+    <input type="checkbox" checked={allowApproximate} onChange={(event) => onAllowApproximateChange(event.target.checked)} className="mt-1 accent-[#b65a38]" />
+    Save this address as text only; show an approximate PIN-code pin until its exact place is confirmed.
+  </label>;
+  const mapsUrl = new URL("https://www.google.com/maps/search/");
+  mapsUrl.searchParams.set("api", "1");
+  mapsUrl.searchParams.set("query", `${selectedPlace.latitude},${selectedPlace.longitude}`);
+  mapsUrl.searchParams.set("query_place_id", selectedPlace.placeId);
+  return <div className="rounded-lg border border-[#d6cfc4] bg-[#faf7f2] p-3 text-xs leading-5">
+    <p className="font-semibold">Google place selected: {selectedPlace.address}</p>
+    <p className="text-[#6f6a65]">{selectedPlace.postalCode ?? "PIN not supplied"} · {selectedPlace.state ?? "State not supplied"}</p>
+    <a href={mapsUrl.toString()} target="_blank" rel="noreferrer" className="mt-1 inline-flex min-h-9 items-center font-semibold text-[#8c432b] underline underline-offset-2">Review selected pin in Google Maps <ArrowUpRight className="ml-1 h-3.5 w-3.5" /></a>
+    <label className="mt-2 flex items-start gap-2 border-t border-[#e9e2d8] pt-2">
+      <input type="checkbox" checked={confirmedPlace} onChange={(event) => onConfirmedPlaceChange(event.target.checked)} className="mt-1 accent-[#b65a38]" />
+      I checked that this point represents the dealer’s visit location.
+    </label>
+  </div>;
+}
+
 function makeCoverageData(
   boundaries: PincodeBoundaryData | null,
-  dealers: Dealer[],
+  dealers: DealerSummary[],
 ): MapData {
-  const dealersByPincode = new Map<string, Dealer[]>();
+  const dealersByPincode = new Map<string, DealerSummary[]>();
   for (const dealer of dealers) {
-    dealersByPincode.set(dealer.pincode, [
-      ...(dealersByPincode.get(dealer.pincode) ?? []),
-      dealer,
-    ]);
+    const group = dealersByPincode.get(dealer.pincode);
+    if (group) group.push(dealer);
+    else dealersByPincode.set(dealer.pincode, [dealer]);
   }
 
   return {
@@ -255,7 +368,7 @@ function makeCoverageData(
         ...new Set(assignedDealers.map((dealer) => dealer.salesperson)),
       ];
       const conflict = salespeople.length > 1;
-      const salesperson = conflict ? "Multiple salespeople" : salespeople[0];
+      const salesperson = conflict ? "Shared PIN" : salespeople[0];
       const color = conflict ? "#7d8582" : getSalespersonColor(salesperson);
       return [
         {
@@ -278,7 +391,19 @@ function makeCoverageData(
   };
 }
 
-function makeDealerData(dealers: Dealer[]): MapData {
+function mergeBoundaries(current: PincodeBoundaryData, incoming: PincodeBoundaryData): PincodeBoundaryData {
+  if (!incoming.features.length) return current;
+  const seen = new Set(current.features.map((feature) => `${feature.properties.pin_code}:${JSON.stringify(feature.geometry)}`));
+  const additional = incoming.features.filter((feature) => {
+    const key = `${feature.properties.pin_code}:${JSON.stringify(feature.geometry)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return additional.length ? { type: "FeatureCollection", features: [...current.features, ...additional] } : current;
+}
+
+function makeDealerData(dealers: DealerSummary[]): MapData {
   return {
     type: "FeatureCollection",
     features: dealers.map((dealer) => ({
@@ -290,8 +415,7 @@ function makeDealerData(dealers: Dealer[]): MapData {
         pincode: dealer.pincode,
         area: dealer.area,
         address: dealer.address ?? "",
-        locationPrecision:
-          dealer.locationPrecision ?? (dealer.address ? "address" : "pincode"),
+        locationPrecision: dealer.locationPrecision ?? (dealer.address ? "address" : "pincode"),
         color: getSalespersonColor(dealer.salesperson),
         review: Boolean(dealer.reviewNote),
       },
@@ -335,26 +459,40 @@ function getCoverageBounds(
   ];
 }
 
+function getDealerBounds(dealers: DealerSummary[]): [[number, number], [number, number]] | null {
+  if (!dealers.length) return null;
+  let west = Infinity, south = Infinity, east = -Infinity, north = -Infinity;
+  for (const dealer of dealers) {
+    if (!Number.isFinite(dealer.longitude) || !Number.isFinite(dealer.latitude)) continue;
+    west = Math.min(west, dealer.longitude);
+    south = Math.min(south, dealer.latitude);
+    east = Math.max(east, dealer.longitude);
+    north = Math.max(north, dealer.latitude);
+  }
+  return [west, south, east, north].every(Number.isFinite) ? [[west, south], [east, north]] : null;
+}
+
 function MapLibreTerritoryMap({
   dealers,
   selectedId,
   onSelect,
   focusRequest,
+  boundaries,
+  active,
 }: {
-  dealers: Dealer[];
+  dealers: DealerSummary[];
   selectedId: number | null;
   onSelect: (id: number) => void;
-  focusRequest: Dealer | null;
+  focusRequest: DealerSummary | null;
+  boundaries: PincodeBoundaryData;
+  active: boolean;
 }) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const onSelectRef = useRef(onSelect);
   const dealersRef = useRef(dealers);
   const fittedInitialCoverageRef = useRef(false);
-  const unavailablePinsRef = useRef(new Set<string>());
   const [ready, setReady] = useState(false);
-  const [boundariesLoaded, setBoundariesLoaded] = useState(false);
-  const [boundaries, setBoundaries] = useState<PincodeBoundaryData | null>(null);
 
   useEffect(() => {
     onSelectRef.current = onSelect;
@@ -363,67 +501,6 @@ function MapLibreTerritoryMap({
   useEffect(() => {
     dealersRef.current = dealers;
   }, [dealers]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void fetch("/pincode-boundaries.geojson", { signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) throw new Error("Initial PIN boundaries failed to load.");
-        return response.json() as Promise<PincodeBoundaryData>;
-      })
-      .then((data) => setBoundaries(data))
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        toast.error("PIN-code boundaries could not be loaded.");
-      })
-      .finally(() => setBoundariesLoaded(true));
-    return () => controller.abort();
-  }, []);
-
-  useEffect(() => {
-    if (!boundariesLoaded) return;
-    const knownPins = new Set(
-      (boundaries?.features ?? []).map((feature) =>
-        String(feature.properties.pin_code ?? ""),
-      ),
-    );
-    const missingPins = [
-      ...new Set(
-        dealers
-          .map((dealer) => dealer.pincode)
-          .filter(
-            (pincode) =>
-              !knownPins.has(pincode) &&
-              !unavailablePinsRef.current.has(pincode),
-          ),
-      ),
-    ];
-    if (!missingPins.length) return;
-
-    const controller = new AbortController();
-    void fetchPincodeBoundaries(missingPins, controller.signal)
-      .then((incoming) => {
-        const returnedPins = new Set(
-          incoming.features.map((feature) =>
-            String(feature.properties.pin_code ?? ""),
-          ),
-        );
-        for (const pincode of missingPins) {
-          if (!returnedPins.has(pincode)) unavailablePinsRef.current.add(pincode);
-        }
-        if (!incoming.features.length) return;
-        setBoundaries((current) => ({
-          type: "FeatureCollection",
-          features: [...(current?.features ?? []), ...incoming.features],
-        }));
-      })
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        for (const pincode of missingPins) unavailablePinsRef.current.add(pincode);
-        toast.error("A new PIN boundary could not be loaded.");
-      });
-    return () => controller.abort();
-  }, [boundaries, boundariesLoaded, dealers]);
 
   useEffect(() => {
     let active = true;
@@ -563,25 +640,29 @@ function MapLibreTerritoryMap({
   }, []);
 
   useEffect(() => {
-    if (!ready || !mapRef.current) return;
+    if (!active || !ready || !mapRef.current) return;
     (mapRef.current.getSource("coverage") as GeoJSONSource)?.setData(
       makeCoverageData(boundaries, dealers) as never,
     );
+  }, [active, boundaries, dealers, ready]);
+
+  useEffect(() => {
+    if (!active || !ready || !mapRef.current) return;
     (mapRef.current.getSource("dealers") as GeoJSONSource)?.setData(
       makeDealerData(dealers) as never,
     );
-  }, [boundaries, dealers, ready]);
+  }, [active, dealers, ready]);
 
   useEffect(() => {
     if (
-      !ready ||
+      !active || !ready ||
       !mapRef.current ||
-      !boundaries ||
+      (!boundaries.features.length && !dealers.length) ||
       fittedInitialCoverageRef.current
     ) {
       return;
     }
-    const bounds = getCoverageBounds(makeCoverageData(boundaries, dealers));
+    const bounds = getDealerBounds(dealers) ?? getCoverageBounds(makeCoverageData(boundaries, dealers));
     if (!bounds) return;
     fittedInitialCoverageRef.current = true;
     mapRef.current.fitBounds(bounds, {
@@ -589,20 +670,20 @@ function MapLibreTerritoryMap({
       maxZoom: 8.25,
       duration: 0,
     });
-  }, [boundaries, dealers, ready]);
+  }, [active, boundaries, dealers, ready]);
 
   useEffect(() => {
-    if (!ready || !mapRef.current) return;
+    if (!active || !ready || !mapRef.current) return;
     mapRef.current.setPaintProperty("dealer-points", "circle-radius", [
       "case",
       ["==", ["get", "id"], selectedId ?? -1],
       10,
       7,
     ]);
-  }, [ready, selectedId]);
+  }, [active, ready, selectedId]);
 
   useEffect(() => {
-    if (!focusRequest || !mapRef.current) return;
+    if (!active || !focusRequest || !mapRef.current) return;
     mapRef.current.flyTo({
       center: [focusRequest.longitude, focusRequest.latitude],
       zoom: 10.5,
@@ -610,10 +691,10 @@ function MapLibreTerritoryMap({
         ? 0
         : 850,
     });
-  }, [focusRequest]);
+  }, [active, focusRequest]);
 
   return (
-    <div className="relative h-full min-h-0 overflow-hidden bg-[#e5e8e4] lg:min-h-[480px]">
+    <div className="relative h-full min-h-0 overflow-hidden bg-[#ede7de] lg:min-h-[480px]">
       <div
         ref={mapContainer}
         className="absolute inset-0"
@@ -624,7 +705,7 @@ function MapLibreTerritoryMap({
         <PopoverTrigger asChild>
           <button
             type="button"
-            className="absolute left-3 top-16 inline-flex min-h-9 items-center gap-1.5 rounded-full border border-white/75 bg-white/94 px-3 text-[11px] font-semibold text-[#46514d] shadow-[0_8px_24px_rgba(25,38,34,0.13)] backdrop-blur transition-[transform,background-color] active:scale-[0.97] hover:bg-white sm:bottom-5 sm:left-5 sm:top-auto"
+            className="absolute left-3 top-16 inline-flex min-h-9 items-center gap-1.5 rounded-full border border-white/75 bg-white/94 px-3 text-[11px] font-semibold text-[#5f5b57] shadow-[0_8px_24px_rgba(37,42,68,0.13)] backdrop-blur transition-[transform,background-color] active:scale-[0.97] hover:bg-white sm:bottom-5 sm:left-5 sm:top-auto"
             aria-label="Show coverage information"
           >
             <Info className="h-3.5 w-3.5" />
@@ -635,18 +716,19 @@ function MapLibreTerritoryMap({
           side="top"
           align="start"
           sideOffset={8}
-          className="w-[min(320px,calc(100vw-24px))] rounded-xl border-white/70 bg-white/96 p-4 text-[#26312e] shadow-[0_16px_42px_rgba(23,58,52,0.2)] backdrop-blur"
+          className="w-[min(320px,calc(100vw-24px))] rounded-xl border-white/70 bg-white/96 p-4 text-[#252a30] shadow-[0_16px_42px_rgba(37,42,68,0.2)] backdrop-blur"
         >
           <p className="text-sm font-semibold">PIN-code coverage</p>
-          <p className="mt-1.5 text-xs leading-5 text-[#65706c]">
-            Colored polygons show salesperson assignments by postal PIN boundary.
-            Grey polygons have no dealer assignment in the current data.
+          <p className="mt-1.5 text-xs leading-5 text-[#6f6a65]">
+            Colored polygons contain dealers assigned to one salesperson. A
+            slate polygon with an amber border is a shared PIN containing dealers
+            assigned to multiple salespeople.
           </p>
-          <div className="mt-3 flex items-center gap-2 border-t border-[#e2e6e3] pt-3 text-xs text-[#596560]">
-            <span className="h-3 w-3 shrink-0 rounded-sm border border-[#7d8884] bg-[#c9cecb]" />
-            Grey means unassigned
+          <div className="mt-3 flex items-center gap-2 border-t border-[#e9e2d8] pt-3 text-xs text-[#5f5b57]">
+            <span className="h-3 w-3 shrink-0 rounded-sm border border-[#b45309] bg-[#7d8582]" />
+            Shared PIN · multiple salespeople
           </div>
-          <p className="mt-2 text-[10px] leading-4 text-[#89928e]">
+          <p className="mt-2 text-[11px] leading-4 text-[#6f6a65]">
             Boundary source: Department of Posts via OGD India / Esri India
           </p>
         </PopoverContent>
@@ -662,25 +744,36 @@ function GoogleTerritoryMap({
   focusRequest,
   apiKey,
   onProviderError,
+  boundaries,
+  active,
 }: {
-  dealers: Dealer[];
+  dealers: DealerSummary[];
   selectedId: number | null;
   onSelect: (id: number) => void;
-  focusRequest: Dealer | null;
+  focusRequest: DealerSummary | null;
   apiKey: string;
   onProviderError: () => void;
+  boundaries: PincodeBoundaryData;
+  active: boolean;
 }) {
+  const mapId = resolveGoogleMapsMapId(
+    process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID,
+    process.env.NODE_ENV,
+  );
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
-  const markersRef = useRef<google.maps.Marker[]>([]);
-  const stateBoundariesRef = useRef<MapData | null>(null);
+  const markersRef = useRef(
+    new Map<number, google.maps.Marker | google.maps.marker.AdvancedMarkerElement>(),
+  );
+  const markerDotsRef = useRef(new Map<number, HTMLElement>());
+  const markerSignaturesRef = useRef(new Map<number, string>());
+  const selectedMarkerRef = useRef<number | null>(null);
+  const markerLibraryRef = useRef<google.maps.MarkerLibrary | null>(null);
+  const [stateBoundaries, setStateBoundaries] = useState<MapData | null>(null);
   const onSelectRef = useRef(onSelect);
   const dealersRef = useRef(dealers);
   const fittedInitialCoverageRef = useRef(false);
-  const unavailablePinsRef = useRef(new Set<string>());
   const [ready, setReady] = useState(false);
-  const [boundariesLoaded, setBoundariesLoaded] = useState(false);
-  const [boundaries, setBoundaries] = useState<PincodeBoundaryData | null>(null);
 
   useEffect(() => {
     onSelectRef.current = onSelect;
@@ -692,82 +785,31 @@ function GoogleTerritoryMap({
 
   useEffect(() => {
     const controller = new AbortController();
-    void Promise.all([
-      fetch("/pincode-boundaries.geojson", { signal: controller.signal }).then(
-        (response) => {
-          if (!response.ok) throw new Error("Initial PIN boundaries failed to load.");
-          return response.json() as Promise<PincodeBoundaryData>;
-        },
-      ),
-      fetch("/region-boundaries.geojson", { signal: controller.signal }).then(
-        (response) => {
-          if (!response.ok) throw new Error("State boundaries failed to load.");
-          return response.json() as Promise<MapData>;
-        },
-      ),
-    ])
-      .then(([pincodeData, stateData]) => {
-        setBoundaries(pincodeData);
-        stateBoundariesRef.current = stateData;
+    void fetch("/region-boundaries.geojson", { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error("State boundaries failed to load.");
+        return response.json() as Promise<MapData>;
       })
+      .then(setStateBoundaries)
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
-        toast.error("Coverage boundaries could not be loaded.");
-      })
-      .finally(() => setBoundariesLoaded(true));
+        toast.error("State boundaries could not be loaded.");
+      });
     return () => controller.abort();
   }, []);
 
   useEffect(() => {
-    if (!boundariesLoaded) return;
-    const knownPins = new Set(
-      (boundaries?.features ?? []).map((feature) =>
-        String(feature.properties.pin_code ?? ""),
-      ),
-    );
-    const missingPins = [
-      ...new Set(
-        dealers
-          .map((dealer) => dealer.pincode)
-          .filter(
-            (pincode) =>
-              !knownPins.has(pincode) &&
-              !unavailablePinsRef.current.has(pincode),
-          ),
-      ),
-    ];
-    if (!missingPins.length) return;
-
-    const controller = new AbortController();
-    void fetchPincodeBoundaries(missingPins, controller.signal)
-      .then((incoming) => {
-        const returnedPins = new Set(
-          incoming.features.map((feature) =>
-            String(feature.properties.pin_code ?? ""),
-          ),
-        );
-        for (const pincode of missingPins) {
-          if (!returnedPins.has(pincode)) unavailablePinsRef.current.add(pincode);
-        }
-        if (!incoming.features.length) return;
-        setBoundaries((current) => ({
-          type: "FeatureCollection",
-          features: [...(current?.features ?? []), ...incoming.features],
-        }));
-      })
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        for (const pincode of missingPins) unavailablePinsRef.current.add(pincode);
-        toast.error("A new PIN boundary could not be loaded.");
-      });
-    return () => controller.abort();
-  }, [boundaries, boundariesLoaded, dealers]);
-
-  useEffect(() => {
     let active = true;
-    void importGoogleMapsLibrary(apiKey, "maps")
-      .then(({ Map }) => {
+    const markers = markersRef.current;
+    const markerDots = markerDotsRef.current;
+    const markerSignatures = markerSignaturesRef.current;
+    void Promise.all([
+      importGoogleMapsLibrary(apiKey, "maps"),
+      mapId ? importGoogleMapsLibrary(apiKey, "marker") : Promise.resolve(null),
+    ])
+      .then(([{ Map }, markerLibrary]) => {
         if (!active || !mapContainer.current) return;
+        markerLibraryRef.current = markerLibrary;
         const map = new Map(mapContainer.current, {
           center: { lat: 16.35, lng: 80.45 },
           zoom: 6,
@@ -778,6 +820,7 @@ function GoogleTerritoryMap({
           fullscreenControl: false,
           clickableIcons: false,
           gestureHandling: "greedy",
+          ...(mapId ? { mapId } : {}),
         });
         map.data.addListener("click", (event: google.maps.Data.MouseEvent) => {
           const pincode = String(event.feature.getProperty("pincode") ?? "");
@@ -797,35 +840,39 @@ function GoogleTerritoryMap({
 
     return () => {
       active = false;
-      markersRef.current.forEach((marker) => marker.setMap(null));
-      markersRef.current = [];
+      markers.forEach((marker) => {
+        if (marker instanceof google.maps.Marker) marker.setMap(null);
+        else marker.map = null;
+      });
+      markers.clear();
+      markerDots.clear();
+      markerSignatures.clear();
+      markerLibraryRef.current = null;
       if (mapRef.current) google.maps.event.clearInstanceListeners(mapRef.current);
       mapRef.current = null;
     };
-  }, [apiKey, onProviderError]);
+  }, [apiKey, mapId, onProviderError]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!ready || !map) return;
+    if (!active || !ready || !map) return;
 
-    map.data.forEach((feature) => map.data.remove(feature));
-    const stateData = stateBoundariesRef.current;
-    if (stateData) {
-      map.data.addGeoJson({
-        ...stateData,
-        features: stateData.features.map((feature) => ({
-          ...feature,
-          properties: { ...feature.properties, layerKind: "state" },
-        })),
-      } as never);
+    const desired = [
+      ...(stateBoundaries?.features ?? []).map((feature, index) => ({ id: `state-${index}`, feature, layerKind: "state" })),
+      ...makeCoverageData(boundaries, dealers).features.map((feature, index) => ({ id: `coverage-${feature.properties.pincode}-${index}`, feature, layerKind: "coverage" })),
+    ];
+    const desiredIds = new Set(desired.map((entry) => entry.id));
+    map.data.forEach((feature) => { if (!desiredIds.has(String(feature.getId()))) map.data.remove(feature); });
+    for (const entry of desired) {
+      const existing = map.data.getFeatureById(entry.id);
+      if (existing) {
+        for (const [key, value] of Object.entries(entry.feature.properties)) {
+          if (existing.getProperty(key) !== value) existing.setProperty(key, value);
+        }
+      } else {
+        map.data.addGeoJson({ ...entry.feature, id: entry.id, properties: { ...entry.feature.properties, layerKind: entry.layerKind } } as never);
+      }
     }
-    map.data.addGeoJson({
-      ...makeCoverageData(boundaries, dealers),
-      features: makeCoverageData(boundaries, dealers).features.map((feature) => ({
-        ...feature,
-        properties: { ...feature.properties, layerKind: "coverage" },
-      })),
-    } as never);
     map.data.setStyle((feature) => {
       if (feature.getProperty("layerKind") === "state") {
         return {
@@ -847,29 +894,8 @@ function GoogleTerritoryMap({
       };
     });
 
-    markersRef.current.forEach((marker) => marker.setMap(null));
-    markersRef.current = dealers.map((dealer) => {
-      const marker = new google.maps.Marker({
-        map,
-        position: { lat: dealer.latitude, lng: dealer.longitude },
-        title: `${dealer.dealer} · ${dealer.area} · ${dealer.pincode}`,
-        zIndex: dealer.id === selectedId ? 20 : 10,
-        icon: {
-          path: google.maps.SymbolPath.CIRCLE,
-          fillColor: getSalespersonColor(dealer.salesperson),
-          fillOpacity: 1,
-          strokeColor: "#ffffff",
-          strokeOpacity: 1,
-          strokeWeight: 2.5,
-          scale: dealer.id === selectedId ? 10 : 7,
-        },
-      });
-      marker.addListener("click", () => onSelectRef.current(dealer.id));
-      return marker;
-    });
-
-    if (boundaries && !fittedInitialCoverageRef.current) {
-      const coverageBounds = getCoverageBounds(makeCoverageData(boundaries, dealers));
+    if ((boundaries.features.length || dealers.length) && !fittedInitialCoverageRef.current) {
+      const coverageBounds = getDealerBounds(dealers) ?? getCoverageBounds(makeCoverageData(boundaries, dealers));
       if (coverageBounds) {
         const bounds = new google.maps.LatLngBounds(
           { lat: coverageBounds[0][1], lng: coverageBounds[0][0] },
@@ -879,17 +905,116 @@ function GoogleTerritoryMap({
         fittedInitialCoverageRef.current = true;
       }
     }
-  }, [boundaries, dealers, ready, selectedId]);
+  }, [active, boundaries, dealers, ready, stateBoundaries]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!focusRequest || !map) return;
+    if (!active || !ready || !map) return;
+    const markers = markersRef.current;
+    const markerDots = markerDotsRef.current;
+    const signatures = markerSignaturesRef.current;
+    const desired = new Map(dealers.map((dealer) => [dealer.id, dealer]));
+    const removeMarker = (marker: google.maps.Marker | google.maps.marker.AdvancedMarkerElement) => {
+      if (marker instanceof google.maps.Marker) marker.setMap(null);
+      else marker.map = null;
+    };
+    for (const [id, marker] of markers) {
+      const dealer = desired.get(id);
+      const signature = dealer ? `${dealer.latitude}:${dealer.longitude}:${dealer.salesperson}:${dealer.dealer}:${dealer.area}:${dealer.pincode}` : null;
+      if (signature === signatures.get(id)) continue;
+      removeMarker(marker);
+      markers.delete(id);
+      markerDots.delete(id);
+      signatures.delete(id);
+    }
+
+    for (const dealer of desired.values()) {
+      if (markers.has(dealer.id)) continue;
+      const markerLibrary = markerLibraryRef.current;
+      if (markerLibrary && mapId) {
+        const markerDot = document.createElement("span");
+        markerDot.style.cssText = [
+          "width:14px",
+          "height:14px",
+          `background:${getSalespersonColor(dealer.salesperson)}`,
+          "border:3px solid #ffffff",
+          "border-radius:9999px",
+          "display:block",
+          "box-shadow:0 2px 6px rgb(37 42 48 / 28%)",
+        ].join(";");
+        const marker = new markerLibrary.AdvancedMarkerElement({
+          map,
+          position: { lat: dealer.latitude, lng: dealer.longitude },
+          title: `${dealer.dealer} · ${dealer.area} · ${dealer.pincode}`,
+          zIndex: 10,
+          gmpClickable: true,
+        });
+        marker.append(markerDot);
+        marker.addEventListener("gmp-click", () => onSelectRef.current(dealer.id));
+        markers.set(dealer.id, marker);
+        markerDots.set(dealer.id, markerDot);
+        signatures.set(dealer.id, `${dealer.latitude}:${dealer.longitude}:${dealer.salesperson}:${dealer.dealer}:${dealer.area}:${dealer.pincode}`);
+        continue;
+      }
+      const marker = new google.maps.Marker({
+        map,
+        position: { lat: dealer.latitude, lng: dealer.longitude },
+        title: `${dealer.dealer} · ${dealer.area} · ${dealer.pincode}`,
+        zIndex: 10,
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          fillColor: getSalespersonColor(dealer.salesperson),
+          fillOpacity: 1,
+          strokeColor: "#ffffff",
+          strokeOpacity: 1,
+          strokeWeight: 2.5,
+          scale: 7,
+        },
+      });
+      marker.addListener("click", () => onSelectRef.current(dealer.id));
+      markers.set(dealer.id, marker);
+      signatures.set(dealer.id, `${dealer.latitude}:${dealer.longitude}:${dealer.salesperson}:${dealer.dealer}:${dealer.area}:${dealer.pincode}`);
+    }
+  }, [active, dealers, mapId, ready]);
+
+  useEffect(() => {
+    const resizeMarker = (dealerId: number | null, selected: boolean) => {
+      if (dealerId === null) return;
+      const marker = markersRef.current.get(dealerId);
+      if (!marker) return;
+      const size = selected ? 20 : 14;
+      const markerDot = markerDotsRef.current.get(dealerId);
+      if (markerDot) {
+        markerDot.style.width = `${size}px`;
+        markerDot.style.height = `${size}px`;
+        if (!(marker instanceof google.maps.Marker)) {
+          marker.zIndex = selected ? 20 : 10;
+        }
+        return;
+      }
+      if (marker instanceof google.maps.Marker) {
+        const icon = marker.getIcon();
+        if (icon && typeof icon === "object" && "path" in icon) {
+          marker.setIcon({ ...icon, scale: selected ? 10 : 7 });
+        }
+        marker.setZIndex(selected ? 20 : 10);
+      }
+    };
+
+    resizeMarker(selectedMarkerRef.current, false);
+    resizeMarker(selectedId, true);
+    selectedMarkerRef.current = selectedId;
+  }, [active, dealers, ready, selectedId]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!active || !focusRequest || !map) return;
     map.panTo({ lat: focusRequest.latitude, lng: focusRequest.longitude });
     map.setZoom(11);
-  }, [focusRequest]);
+  }, [active, focusRequest]);
 
   return (
-    <div className="relative h-full min-h-0 overflow-hidden bg-[#e5e8e4] lg:min-h-[480px]">
+    <div className="relative h-full min-h-0 overflow-hidden bg-[#ede7de] lg:min-h-[480px]">
       <div
         ref={mapContainer}
         className="absolute inset-0"
@@ -906,7 +1031,7 @@ function CoverageInfo() {
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="absolute left-3 top-16 inline-flex min-h-9 items-center gap-1.5 rounded-full border border-white/75 bg-white/94 px-3 text-[11px] font-semibold text-[#46514d] shadow-[0_8px_24px_rgba(25,38,34,0.13)] backdrop-blur transition-[transform,background-color] active:scale-[0.97] hover:bg-white sm:bottom-5 sm:left-5 sm:top-auto"
+          className="absolute left-3 top-16 inline-flex min-h-11 items-center gap-1.5 rounded-full border border-white/75 bg-white/94 px-3 text-xs font-semibold text-[#5f5b57] shadow-[0_8px_24px_rgba(37,42,68,0.13)] backdrop-blur transition-[transform,background-color] active:scale-[0.97] hover:bg-white sm:bottom-5 sm:left-5 sm:top-auto"
           aria-label="Show coverage information"
         >
           <Info className="h-3.5 w-3.5" />
@@ -917,18 +1042,19 @@ function CoverageInfo() {
         side="top"
         align="start"
         sideOffset={8}
-        className="w-[min(320px,calc(100vw-24px))] rounded-xl border-white/70 bg-white/96 p-4 text-[#26312e] shadow-[0_16px_42px_rgba(23,58,52,0.2)] backdrop-blur"
+        className="w-[min(320px,calc(100vw-24px))] rounded-xl border-white/70 bg-white/96 p-4 text-[#252a30] shadow-[0_16px_42px_rgba(37,42,68,0.2)] backdrop-blur"
       >
         <p className="text-sm font-semibold">PIN-code coverage</p>
-        <p className="mt-1.5 text-xs leading-5 text-[#65706c]">
-          Colored polygons show salesperson assignments by postal PIN boundary.
-          Grey polygons have no dealer assignment in the current data.
+        <p className="mt-1.5 text-xs leading-5 text-[#6f6a65]">
+          Colored polygons contain dealers assigned to one salesperson. A slate
+          polygon with an amber border is a shared PIN containing dealers assigned
+          to multiple salespeople.
         </p>
-        <div className="mt-3 flex items-center gap-2 border-t border-[#e2e6e3] pt-3 text-xs text-[#596560]">
-          <span className="h-3 w-3 shrink-0 rounded-sm border border-[#7d8884] bg-[#c9cecb]" />
-          Grey means unassigned
+        <div className="mt-3 flex items-center gap-2 border-t border-[#e9e2d8] pt-3 text-xs text-[#5f5b57]">
+          <span className="h-3 w-3 shrink-0 rounded-sm border border-[#b45309] bg-[#7d8582]" />
+          Shared PIN · multiple salespeople
         </div>
-        <p className="mt-2 text-[10px] leading-4 text-[#89928e]">
+        <p className="mt-2 text-[11px] leading-4 text-[#6f6a65]">
           Boundary source: Department of Posts via OGD India / Esri India
         </p>
       </PopoverContent>
@@ -937,25 +1063,68 @@ function CoverageInfo() {
 }
 
 function TerritoryMap(props: {
-  dealers: Dealer[];
+  dealers: DealerSummary[];
   selectedId: number | null;
   onSelect: (id: number) => void;
-  focusRequest: Dealer | null;
+  focusRequest: DealerSummary | null;
+  active: boolean;
 }) {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   const [providerFailed, setProviderFailed] = useState(false);
   const handleProviderError = useMemo(() => () => setProviderFailed(true), []);
+  const [boundaries, setBoundaries] = useState(cachedPincodeBoundaries);
+  const [boundaryError, setBoundaryError] = useState(false);
+  const [retryBoundaries, setRetryBoundaries] = useState(0);
+  const pinKey = useMemo(() => [...new Set(props.dealers.map((dealer) => dealer.pincode))].sort().join(","), [props.dealers]);
+
+  useEffect(() => {
+    if (!props.active) return;
+    const controller = new AbortController();
+    let current = true;
+    async function load() {
+      try {
+        const initial = await loadInitialPincodeBoundaries();
+        if (!current) return;
+        setBoundaries((current) => mergeBoundaries(current, initial));
+        const result = await loadMissingPincodeBoundaries(
+          pinKey ? pinKey.split(",") : [],
+          (updated) => { if (current) setBoundaries((previous) => mergeBoundaries(previous, updated)); },
+          controller.signal,
+        );
+        if (current) setBoundaryError(result.failedBatches > 0);
+      } catch {
+        if (current) setBoundaryError(true);
+      }
+    }
+    void load();
+    return () => {
+      current = false;
+      controller.abort();
+    };
+  }, [pinKey, props.active, retryBoundaries]);
+
+  const boundaryNotice = boundaryError ? (
+    <button
+      type="button"
+      className="absolute bottom-4 left-4 z-10 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-amber-800 shadow-sm"
+      onClick={() => {
+        setBoundaryError(false);
+        setRetryBoundaries((value) => value + 1);
+      }}
+    >
+      Some PIN boundaries could not load. Retry
+    </button>
+  ) : null;
 
   if (apiKey && !providerFailed) {
     return (
-      <GoogleTerritoryMap
-        {...props}
-        apiKey={apiKey}
-        onProviderError={handleProviderError}
-      />
+      <div className="relative h-full">
+        <GoogleTerritoryMap {...props} boundaries={boundaries} apiKey={apiKey} onProviderError={handleProviderError} />
+        {boundaryNotice}
+      </div>
     );
   }
-  return <MapLibreTerritoryMap {...props} />;
+  return <div className="relative h-full"><MapLibreTerritoryMap {...props} boundaries={boundaries} />{boundaryNotice}</div>;
 }
 
 function AddDealerDialog({
@@ -971,6 +1140,9 @@ function AddDealerDialog({
   const [pincode, setPincode] = useState("");
   const [area, setArea] = useState("");
   const [address, setAddress] = useState("");
+  const [selectedPlace, setSelectedPlace] = useState<GooglePlaceSelection | null>(null);
+  const [confirmedPlace, setConfirmedPlace] = useState(false);
+  const [allowApproximate, setAllowApproximate] = useState(false);
   const [state, setState] = useState<Dealer["state"]>("Telangana");
   const [saving, setSaving] = useState(false);
 
@@ -981,8 +1153,8 @@ function AddDealerDialog({
       return;
     }
     setSaving(true);
-    const [location, validation] = await Promise.all([
-      locateDealer({ address, area, pincode, state }),
+    const [located, validation] = await Promise.all([
+      locateDealerForForm({ address, area, pincode, state, selectedPlace, confirmedPlace, allowApproximate }),
       validatePostalDetailsFromApp(pincode, state, area),
     ]);
     if (validation.status === "invalid") {
@@ -990,26 +1162,25 @@ function AddDealerDialog({
       toast.error(validation.message);
       return;
     }
-    if (!location) {
+    if (!located.location) {
       setSaving(false);
-      toast.error(
-        address.trim()
-          ? "That full address could not be matched inside the entered PIN code. Check it and try again."
-          : "That PIN code could not be located. Check it and try again.",
-      );
+      toast.error(located.error ?? "That PIN code could not be located. Check it and try again.");
       return;
     }
+    const location = located.location;
     const added = await onAdd({
       salesperson,
       dealer: dealer.trim().toUpperCase(),
       pincode,
-      area: area.trim().toUpperCase(),
+      area: canonicalizeAreaName(area),
+      sourceArea: area.trim(),
       address: address.trim() || undefined,
       state,
       longitude: location.coordinates[0],
       latitude: location.coordinates[1],
       locationPrecision: location.precision,
       geocodedAddress: location.resolvedAddress,
+      googlePlaceId: location.precision === "address" ? selectedPlace?.placeId : undefined,
       ...postalValidationFields(validation),
     });
     setSaving(false);
@@ -1018,6 +1189,9 @@ function AddDealerDialog({
     setPincode("");
     setArea("");
     setAddress("");
+    setSelectedPlace(null);
+    setConfirmedPlace(false);
+    setAllowApproximate(false);
     setOpen(false);
   };
 
@@ -1027,18 +1201,18 @@ function AddDealerDialog({
         <Button
           size="sm"
           aria-label="Add dealer"
-          className="h-10 w-10 rounded-xl bg-[#d9f36b] p-0 text-[#173a34] transition-[transform,background-color] active:scale-[0.97] hover:bg-[#cce960] sm:h-9 sm:w-auto sm:rounded-lg sm:px-3"
+          className="h-10 w-10 rounded-xl bg-[#b65a38] p-0 text-white transition-[transform,background-color] active:scale-[0.97] hover:bg-[#a64b2f] sm:h-9 sm:w-auto sm:rounded-lg sm:px-3"
         >
           <Plus className="h-4 w-4" />
           <span className="hidden sm:inline">Add dealer</span>
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[calc(100svh-24px)] overflow-y-auto rounded-2xl border-[#d9dedb] bg-white text-[#18221f] shadow-[0_24px_70px_rgba(15,31,27,0.24)] sm:max-w-[520px]">
+      <DialogContent className="max-h-[calc(100svh-24px)] overflow-y-auto rounded-2xl border-[#ded7cc] bg-white text-[#252a30] shadow-[0_24px_70px_rgba(37,42,48,0.24)] sm:max-w-[520px]">
         <DialogHeader>
-          <DialogTitle className="text-xl tracking-[-0.02em] text-[#18221f]">
+          <DialogTitle className="text-xl tracking-[-0.02em] text-[#252a30]">
             Add a dealer
           </DialogTitle>
-          <DialogDescription className="leading-6 text-[#66716d]">
+          <DialogDescription className="leading-6 text-[#6f6a65]">
             Add a full street address for an address-level map pin. Without one,
             the pin remains an approximate PIN-code location.
           </DialogDescription>
@@ -1046,7 +1220,7 @@ function AddDealerDialog({
         <form onSubmit={submit}>
           <div className="grid gap-4 py-2 sm:grid-cols-2">
             <div className="grid gap-2 sm:col-span-2">
-              <Label htmlFor="dealer-name" className="text-[#35413d]">
+              <Label htmlFor="dealer-name" className="text-[#34333a]">
                 Dealer name
               </Label>
               <Input
@@ -1055,13 +1229,13 @@ function AddDealerDialog({
                 onChange={(event) => setDealer(event.target.value)}
                 placeholder="Sri Lakshmi Textiles"
                 autoFocus
-                className="h-10 border-[#cfd6d2] bg-[#fbfcfb] text-[#18221f] placeholder:text-[#8c9692]"
+                className="h-10 border-[#d6cfc4] bg-[#fffcf7] text-[#252a30] placeholder:text-[#6f6a65]"
               />
             </div>
             <div className="grid gap-2">
-              <Label className="text-[#35413d]">Salesperson</Label>
+              <Label className="text-[#34333a]">Salesperson</Label>
               <Select value={salesperson} onValueChange={setSalesperson}>
-                <SelectTrigger className="h-10 w-full border-[#cfd6d2] bg-[#fbfcfb] text-[#18221f]">
+                <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1074,22 +1248,23 @@ function AddDealerDialog({
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label className="text-[#35413d]">State</Label>
+              <Label className="text-[#34333a]">State</Label>
               <Select
                 value={state}
                 onValueChange={(value) => setState(value as Dealer["state"])}
               >
-                <SelectTrigger className="h-10 w-full border-[#cfd6d2] bg-[#fbfcfb] text-[#18221f]">
+                <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Telangana">Telangana</SelectItem>
-                  <SelectItem value="Andhra Pradesh">Andhra Pradesh</SelectItem>
+                  {INDIAN_STATES.map((item) => (
+                    <SelectItem key={item} value={item}>{item}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="dealer-pin" className="text-[#35413d]">
+              <Label htmlFor="dealer-pin" className="text-[#34333a]">
                 PIN code
               </Label>
               <Input
@@ -1100,11 +1275,11 @@ function AddDealerDialog({
                 }
                 inputMode="numeric"
                 placeholder="500001"
-                className="h-10 border-[#cfd6d2] bg-[#fbfcfb] text-[#18221f] placeholder:text-[#8c9692]"
+                className="h-10 border-[#d6cfc4] bg-[#fffcf7] text-[#252a30] placeholder:text-[#6f6a65]"
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="dealer-area" className="text-[#35413d]">
+              <Label htmlFor="dealer-area" className="text-[#34333a]">
                 Area
               </Label>
               <Input
@@ -1112,23 +1287,24 @@ function AddDealerDialog({
                 value={area}
                 onChange={(event) => setArea(event.target.value)}
                 placeholder="Nampally"
-                className="h-10 border-[#cfd6d2] bg-[#fbfcfb] text-[#18221f] placeholder:text-[#8c9692]"
+                className="h-10 border-[#d6cfc4] bg-[#fffcf7] text-[#252a30] placeholder:text-[#6f6a65]"
               />
             </div>
             <div className="grid gap-2 sm:col-span-2">
-              <Label htmlFor="dealer-address" className="text-[#35413d]">
-                Full address <span className="font-normal text-[#7a8581]">(optional)</span>
+              <Label htmlFor="dealer-address" className="text-[#34333a]">
+                Full address <span className="font-normal text-[#6f6a65]">(optional)</span>
               </Label>
-              <Textarea
+              <GooglePlaceAutocomplete
                 id="dealer-address"
                 value={address}
-                onChange={(event) => setAddress(event.target.value)}
-                placeholder="Shop number, building, street or landmark"
-                className="min-h-20 resize-y border-[#cfd6d2] bg-[#fbfcfb] text-[#18221f] placeholder:text-[#8c9692]"
+                onChange={(value) => { setAddress(value); setSelectedPlace(null); setConfirmedPlace(false); }}
+                onPlaceSelect={(place) => { setSelectedPlace(place); setAllowApproximate(false); }}
+                placeholder="Search building, street or landmark"
               />
-              <p className="text-xs leading-5 text-[#74807c]">
-                Include the shop number and street or landmark for the most precise result.
+              <p className="text-xs leading-5 text-[#6f6a65]">
+                Select a Google suggestion to place the pin. A typed address alone is saved with an approximate PIN pin only if you opt in below.
               </p>
+              <DealerPlaceConfirmation address={address} selectedPlace={selectedPlace} confirmedPlace={confirmedPlace} onConfirmedPlaceChange={setConfirmedPlace} allowApproximate={allowApproximate} onAllowApproximateChange={setAllowApproximate} />
             </div>
           </div>
           <DialogFooter className="mt-4">
@@ -1136,14 +1312,14 @@ function AddDealerDialog({
               type="button"
               variant="outline"
               onClick={() => setOpen(false)}
-              className="border-[#cfd6d2] bg-white text-[#35413d] transition-[transform,background-color] active:scale-[0.98]"
+              className="border-[#d6cfc4] bg-white text-[#34333a] transition-[transform,background-color] active:scale-[0.98]"
             >
               Cancel
             </Button>
             <Button
               type="submit"
               disabled={saving}
-              className="bg-[#d9f36b] text-[#173a34] transition-[transform,background-color] active:scale-[0.98] hover:bg-[#cce960]"
+              className="bg-[#b65a38] text-white transition-[transform,background-color] active:scale-[0.98] hover:bg-[#a64b2f]"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {saving ? "Checking details…" : "Add to map"}
@@ -1171,6 +1347,9 @@ function EditDealerDialog({
   const [pincode, setPincode] = useState(dealer.pincode);
   const [area, setArea] = useState(dealer.area);
   const [address, setAddress] = useState(dealer.address ?? "");
+  const [selectedPlace, setSelectedPlace] = useState<GooglePlaceSelection | null>(null);
+  const [confirmedPlace, setConfirmedPlace] = useState(false);
+  const [allowApproximate, setAllowApproximate] = useState(false);
   const [state, setState] = useState<Dealer["state"]>(dealer.state);
   const [saving, setSaving] = useState(false);
 
@@ -1183,25 +1362,24 @@ function EditDealerDialog({
 
     const pincodeOrStateChanged =
       pincode !== dealer.pincode || state !== dealer.state;
-    const areaChanged = area.trim().toUpperCase() !== dealer.area;
+    const areaChanged = canonicalizeAreaName(area) !== dealer.area;
     const addressChanged = address.trim() !== (dealer.address ?? "");
     const locationChanged =
       pincodeOrStateChanged ||
       addressChanged ||
-      (Boolean(address.trim()) &&
-        (areaChanged || dealer.locationPrecision !== "address"));
+      Boolean(selectedPlace) ||
+      (Boolean(address.trim()) && dealer.locationPrecision !== "address");
     const postalFieldsChanged = pincodeOrStateChanged || areaChanged;
     const shouldValidate = postalFieldsChanged || !dealer.validationStatus;
     setSaving(true);
-    const [location, validation] = await Promise.all([
+    const [located, validation] = await Promise.all([
       locationChanged
-        ? locateDealer({ address, area, pincode, state })
-        : Promise.resolve({
-            coordinates: [dealer.longitude, dealer.latitude] as [number, number],
-            precision:
-              dealer.locationPrecision ?? (dealer.address ? "address" : "pincode"),
-            resolvedAddress: dealer.geocodedAddress,
-          } satisfies GeocodedLocation),
+        ? locateDealerForForm({ address, area, pincode, state, selectedPlace, confirmedPlace, allowApproximate })
+        : Promise.resolve({ location: {
+          coordinates: [dealer.longitude, dealer.latitude] as [number, number],
+          precision: dealer.locationPrecision ?? (dealer.address ? "address" : "pincode"),
+          resolvedAddress: dealer.geocodedAddress,
+        } satisfies GeocodedLocation, error: null }),
       shouldValidate
         ? validatePostalDetailsFromApp(pincode, state, area)
         : Promise.resolve(null),
@@ -1211,27 +1389,28 @@ function EditDealerDialog({
       toast.error(validation.message);
       return;
     }
-    if (!location) {
-      toast.error(
-        address.trim()
-          ? "That full address could not be matched inside the entered PIN code. Check it and try again."
-          : "That PIN code could not be located. Check it and try again.",
-      );
+    if (!located.location) {
+      toast.error(located.error ?? "That PIN code could not be located. Check it and try again.");
       return;
     }
+    const location = located.location;
 
     const updated: Dealer = {
       ...dealer,
       salesperson,
       dealer: dealerName.trim().toUpperCase(),
       pincode,
-      area: area.trim().toUpperCase(),
+      area: canonicalizeAreaName(area),
+      sourceArea: dealer.sourceArea ?? dealer.area,
       address: address.trim() || undefined,
       state,
       longitude: location.coordinates[0],
       latitude: location.coordinates[1],
       locationPrecision: location.precision,
       geocodedAddress: location.resolvedAddress,
+      googlePlaceId: locationChanged
+        ? location.precision === "address" ? selectedPlace?.placeId : undefined
+        : dealer.googlePlaceId,
       ...(validation ? postalValidationFields(validation) : {}),
     };
     if (await onUpdate(updated)) onClose();
@@ -1239,12 +1418,12 @@ function EditDealerDialog({
 
   return (
     <Dialog open onOpenChange={(nextOpen) => !nextOpen && !saving && onClose()}>
-      <DialogContent className="max-h-[calc(100svh-24px)] overflow-y-auto rounded-2xl border-[#d9dedb] bg-white text-[#18221f] shadow-[0_24px_70px_rgba(15,31,27,0.24)] sm:max-w-[520px]">
+      <DialogContent className="max-h-[calc(100svh-24px)] overflow-y-auto rounded-2xl border-[#ded7cc] bg-white text-[#252a30] shadow-[0_24px_70px_rgba(37,42,48,0.24)] sm:max-w-[520px]">
         <DialogHeader>
-          <DialogTitle className="text-xl tracking-[-0.02em] text-[#18221f]">
+          <DialogTitle className="text-xl tracking-[-0.02em] text-[#252a30]">
             Edit dealer
           </DialogTitle>
-          <DialogDescription className="leading-6 text-[#66716d]">
+          <DialogDescription className="leading-6 text-[#6f6a65]">
             PIN, state, and area are checked against the postal directory when
             they change. A full address places the pin at the address result;
             otherwise the pin uses an approximate PIN-code location.
@@ -1253,7 +1432,7 @@ function EditDealerDialog({
         <form onSubmit={submit}>
           <div className="grid gap-4 py-2 sm:grid-cols-2">
             <div className="grid gap-2 sm:col-span-2">
-              <Label htmlFor="edit-dealer-name" className="text-[#35413d]">
+              <Label htmlFor="edit-dealer-name" className="text-[#34333a]">
                 Dealer name
               </Label>
               <Input
@@ -1261,13 +1440,13 @@ function EditDealerDialog({
                 value={dealerName}
                 onChange={(event) => setDealerName(event.target.value)}
                 autoFocus
-                className="h-10 border-[#cfd6d2] bg-[#fbfcfb] text-[#18221f]"
+                className="h-10 border-[#d6cfc4] bg-[#fffcf7] text-[#252a30]"
               />
             </div>
             <div className="grid gap-2">
-              <Label className="text-[#35413d]">Salesperson</Label>
+              <Label className="text-[#34333a]">Salesperson</Label>
               <Select value={salesperson} onValueChange={setSalesperson}>
-                <SelectTrigger className="h-10 w-full border-[#cfd6d2] bg-[#fbfcfb] text-[#18221f]">
+                <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1280,22 +1459,23 @@ function EditDealerDialog({
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label className="text-[#35413d]">State</Label>
+              <Label className="text-[#34333a]">State</Label>
               <Select
                 value={state}
                 onValueChange={(value) => setState(value as Dealer["state"])}
               >
-                <SelectTrigger className="h-10 w-full border-[#cfd6d2] bg-[#fbfcfb] text-[#18221f]">
+                <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Telangana">Telangana</SelectItem>
-                  <SelectItem value="Andhra Pradesh">Andhra Pradesh</SelectItem>
+                  {INDIAN_STATES.map((item) => (
+                    <SelectItem key={item} value={item}>{item}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="edit-dealer-pin" className="text-[#35413d]">
+              <Label htmlFor="edit-dealer-pin" className="text-[#34333a]">
                 PIN code
               </Label>
               <Input
@@ -1305,31 +1485,37 @@ function EditDealerDialog({
                   setPincode(event.target.value.replace(/\D/g, "").slice(0, 6))
                 }
                 inputMode="numeric"
-                className="h-10 border-[#cfd6d2] bg-[#fbfcfb] text-[#18221f]"
+                className="h-10 border-[#d6cfc4] bg-[#fffcf7] text-[#252a30]"
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="edit-dealer-area" className="text-[#35413d]">
+              <Label htmlFor="edit-dealer-area" className="text-[#34333a]">
                 Area
               </Label>
               <Input
                 id="edit-dealer-area"
                 value={area}
                 onChange={(event) => setArea(event.target.value)}
-                className="h-10 border-[#cfd6d2] bg-[#fbfcfb] text-[#18221f]"
+                className="h-10 border-[#d6cfc4] bg-[#fffcf7] text-[#252a30]"
               />
+              {dealer.sourceArea && dealer.sourceArea !== dealer.area ? (
+                <p className="text-xs leading-5 text-[#6f6a65]">
+                  Imported as “{dealer.sourceArea}”
+                </p>
+              ) : null}
             </div>
             <div className="grid gap-2 sm:col-span-2">
-              <Label htmlFor="edit-dealer-address" className="text-[#35413d]">
-                Full address <span className="font-normal text-[#7a8581]">(optional)</span>
+              <Label htmlFor="edit-dealer-address" className="text-[#34333a]">
+                Full address <span className="font-normal text-[#6f6a65]">(optional)</span>
               </Label>
-              <Textarea
+              <GooglePlaceAutocomplete
                 id="edit-dealer-address"
                 value={address}
-                onChange={(event) => setAddress(event.target.value)}
-                placeholder="Shop number, building, street or landmark"
-                className="min-h-20 resize-y border-[#cfd6d2] bg-[#fbfcfb] text-[#18221f] placeholder:text-[#8c9692]"
+                onChange={(value) => { setAddress(value); setSelectedPlace(null); setConfirmedPlace(false); }}
+                onPlaceSelect={(place) => { setSelectedPlace(place); setAllowApproximate(false); }}
+                placeholder="Search building, street or landmark"
               />
+              {(address !== (dealer.address ?? "") || selectedPlace) ? <DealerPlaceConfirmation address={address} selectedPlace={selectedPlace} confirmedPlace={confirmedPlace} onConfirmedPlaceChange={setConfirmedPlace} allowApproximate={allowApproximate} onAllowApproximateChange={setAllowApproximate} /> : null}
             </div>
           </div>
           {dealer.reviewNote ? (
@@ -1376,14 +1562,14 @@ function EditDealerDialog({
               variant="outline"
               disabled={saving}
               onClick={onClose}
-              className="border-[#cfd6d2] bg-white text-[#35413d] transition-[transform,background-color] active:scale-[0.98]"
+              className="border-[#d6cfc4] bg-white text-[#34333a] transition-[transform,background-color] active:scale-[0.98]"
             >
               Cancel
             </Button>
             <Button
               type="submit"
               disabled={saving}
-              className="bg-[#d9f36b] text-[#173a34] transition-[transform,background-color] active:scale-[0.98] hover:bg-[#cce960]"
+              className="bg-[#b65a38] text-white transition-[transform,background-color] active:scale-[0.98] hover:bg-[#a64b2f]"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {saving ? "Saving…" : "Save changes"}
@@ -1500,17 +1686,17 @@ function ImportRowEditor({
   return (
     <div
       className={`rounded-xl border p-3 ${
-        valid ? "border-[#d9dedb] bg-[#fbfcfb]" : "border-[#efc1bc] bg-[#fff9f8]"
+        valid ? "border-[#ded7cc] bg-[#fffcf7]" : "border-[#efc1bc] bg-[#fff9f8]"
       }`}
     >
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-xs font-semibold text-[#6e7874]">ROW {index + 1}</p>
+        <p className="text-xs font-semibold text-[#6f6a65]">ROW {index + 1}</p>
         <Button
           type="button"
           size="icon"
           variant="ghost"
           aria-label={`Remove row ${index + 1}`}
-          className="h-8 w-8 text-[#6e7874] transition-[transform,background-color] active:scale-[0.96] hover:bg-[#f3e6e4] hover:text-[#a13c32]"
+          className="h-8 w-8 text-[#6f6a65] transition-[transform,background-color] active:scale-[0.96] hover:bg-[#f3e6e4] hover:text-[#a13c32]"
           onClick={onRemove}
         >
           <Trash2 className="h-4 w-4" />
@@ -1518,29 +1704,29 @@ function ImportRowEditor({
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <div className="grid gap-1.5">
-          <Label htmlFor={`${row.key}-salesperson`} className="text-xs text-[#59645f]">
+          <Label htmlFor={`${row.key}-salesperson`} className="text-xs text-[#5f5b57]">
             Salesperson
           </Label>
           <Input
             id={`${row.key}-salesperson`}
             value={row.salesperson}
             onChange={(event) => onChange("salesperson", event.target.value)}
-            className="h-9 border-[#cfd6d2] bg-white text-[#18221f]"
+            className="h-9 border-[#d6cfc4] bg-white text-[#252a30]"
           />
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor={`${row.key}-dealer`} className="text-xs text-[#59645f]">
+          <Label htmlFor={`${row.key}-dealer`} className="text-xs text-[#5f5b57]">
             Dealer
           </Label>
           <Input
             id={`${row.key}-dealer`}
             value={row.dealer}
             onChange={(event) => onChange("dealer", event.target.value)}
-            className="h-9 border-[#cfd6d2] bg-white text-[#18221f]"
+            className="h-9 border-[#d6cfc4] bg-white text-[#252a30]"
           />
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor={`${row.key}-pincode`} className="text-xs text-[#59645f]">
+          <Label htmlFor={`${row.key}-pincode`} className="text-xs text-[#5f5b57]">
             PIN code
           </Label>
           <Input
@@ -1551,46 +1737,47 @@ function ImportRowEditor({
             onChange={(event) =>
               onChange("pincode", event.target.value.replace(/\D/g, "").slice(0, 6))
             }
-            className="h-9 border-[#cfd6d2] bg-white text-[#18221f]"
+            className="h-9 border-[#d6cfc4] bg-white text-[#252a30]"
           />
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor={`${row.key}-area`} className="text-xs text-[#59645f]">
+          <Label htmlFor={`${row.key}-area`} className="text-xs text-[#5f5b57]">
             Area
           </Label>
           <Input
             id={`${row.key}-area`}
             value={row.area}
             onChange={(event) => onChange("area", event.target.value)}
-            className="h-9 border-[#cfd6d2] bg-white text-[#18221f]"
+            className="h-9 border-[#d6cfc4] bg-white text-[#252a30]"
           />
         </div>
         <div className="grid gap-1.5">
-          <Label className="text-xs text-[#59645f]">State</Label>
+          <Label className="text-xs text-[#5f5b57]">State</Label>
           <Select
             value={row.state}
             onValueChange={(value) => onChange("state", value as Dealer["state"])}
           >
-            <SelectTrigger className="h-9 w-full border-[#cfd6d2] bg-white text-[#18221f]">
+            <SelectTrigger className="w-full">
               <SelectValue placeholder="Select state" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="Telangana">Telangana</SelectItem>
-              <SelectItem value="Andhra Pradesh">Andhra Pradesh</SelectItem>
+              {INDIAN_STATES.map((item) => (
+                <SelectItem key={item} value={item}>{item}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
       </div>
       <div className="mt-3 grid gap-1.5">
-        <Label htmlFor={`${row.key}-address`} className="text-xs text-[#59645f]">
-          Full address <span className="font-normal text-[#7a8581]">(optional)</span>
+        <Label htmlFor={`${row.key}-address`} className="text-xs text-[#5f5b57]">
+          Full address <span className="font-normal text-[#6f6a65]">(optional)</span>
         </Label>
         <Textarea
           id={`${row.key}-address`}
           value={row.address}
           onChange={(event) => onChange("address", event.target.value)}
           placeholder="Shop number, building, street or landmark"
-          className="min-h-16 resize-y border-[#cfd6d2] bg-white text-[#18221f]"
+          className="min-h-16 resize-y border-[#d6cfc4] bg-white text-[#252a30]"
         />
       </div>
       {!valid ? (
@@ -1618,22 +1805,22 @@ function ImportSourceCard({
       className={`rounded-xl border p-4 ${
         warning
           ? "border-[#e5d8ad] bg-[#fffbeb]"
-          : "border-[#d9dedb] bg-[#f6f8f6]"
+          : "border-[#ded7cc] bg-[#faf5ee]"
       }`}
     >
       <div className="flex items-start gap-3">
         <div
           className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white shadow-sm ${
-            warning ? "text-[#8a6410]" : "text-[#173a34]"
+            warning ? "text-[#8a6410]" : "text-[#252a44]"
           }`}
         >
           {icon}
         </div>
         <div>
-          <p className={`text-sm font-semibold ${warning ? "text-[#493b19]" : "text-[#26312e]"}`}>
+          <p className={`text-sm font-semibold ${warning ? "text-[#493b19]" : "text-[#252a30]"}`}>
             {title}
           </p>
-          <p className={`mt-1 text-xs leading-5 ${warning ? "text-[#776437]" : "text-[#6f7975]"}`}>
+          <p className={`mt-1 text-xs leading-5 ${warning ? "text-[#776437]" : "text-[#6f6a65]"}`}>
             {description}
           </p>
         </div>
@@ -1645,13 +1832,13 @@ function ImportSourceCard({
 function ImportProgress({ value, label }: { value: number; label: string }) {
   return (
     <div className="space-y-2" role="status" aria-live="polite">
-      <div className="flex justify-between gap-4 text-xs text-[#66716d]">
+      <div className="flex justify-between gap-4 text-xs text-[#6f6a65]">
         <span>{label}</span>
         <span className="tabular-nums">{value}%</span>
       </div>
       <Progress
         value={value}
-        className="h-2 bg-[#e8ece9] [&_[data-slot=progress-indicator]]:bg-[#173a34]"
+        className="h-2 bg-[#e9e2d8] [&_[data-slot=progress-indicator]]:bg-[#252a44]"
       />
     </div>
   );
@@ -1674,9 +1861,9 @@ function ImportPagination({
   return (
     <nav
       aria-label="Import review pages"
-      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#d9dedb] bg-[#f8faf8] px-3 py-2"
+      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#ded7cc] bg-[#fbf7f1] px-3 py-2"
     >
-      <p className="text-xs text-[#66716d]">
+      <p className="text-xs text-[#6f6a65]">
         Rows {firstRow}–{lastRow} of {rowCount}
       </p>
       <div className="flex items-center gap-2">
@@ -1686,12 +1873,12 @@ function ImportPagination({
           variant="outline"
           aria-label="Previous review page"
           disabled={page === 1}
-          className="h-8 w-8 border-[#cfd6d2] bg-white text-[#35413d] transition-transform active:scale-[0.96]"
+          className="h-8 w-8 border-[#d6cfc4] bg-white text-[#34333a] transition-transform active:scale-[0.96]"
           onClick={() => onPageChange(page - 1)}
         >
           <ChevronLeft className="h-4 w-4" />
         </Button>
-        <span className="min-w-20 text-center text-xs font-semibold tabular-nums text-[#35413d]">
+        <span className="min-w-20 text-center text-xs font-semibold tabular-nums text-[#34333a]">
           Page {page} of {pageCount}
         </span>
         <Button
@@ -1700,7 +1887,7 @@ function ImportPagination({
           variant="outline"
           aria-label="Next review page"
           disabled={page === pageCount}
-          className="h-8 w-8 border-[#cfd6d2] bg-white text-[#35413d] transition-transform active:scale-[0.96]"
+          className="h-8 w-8 border-[#d6cfc4] bg-white text-[#34333a] transition-transform active:scale-[0.96]"
           onClick={() => onPageChange(page + 1)}
         >
           <ChevronRight className="h-4 w-4" />
@@ -1899,7 +2086,8 @@ function ImportDealersDialog({
           salesperson: row.salesperson.trim().toUpperCase(),
           dealer: row.dealer.trim().toUpperCase(),
           pincode: row.pincode,
-          area: row.area.trim().toUpperCase(),
+          area: canonicalizeAreaName(row.area),
+          sourceArea: row.area.trim(),
           address: row.address.trim() || undefined,
           state: row.state as Dealer["state"],
           longitude: location.coordinates[0],
@@ -1960,18 +2148,18 @@ function ImportDealersDialog({
           size="sm"
           variant="outline"
           aria-label="Import dealers"
-          className="h-10 w-10 rounded-xl border-[#cfd6d2] bg-white p-0 text-[#35413d] shadow-sm transition-[transform,background-color] active:scale-[0.97] hover:bg-[#eef1ef] hover:text-[#18221f] sm:h-9 sm:w-auto sm:rounded-lg sm:px-3"
+          className="h-10 w-10 rounded-xl border-[#d6cfc4] bg-white p-0 text-[#34333a] shadow-sm transition-[transform,background-color] active:scale-[0.97] hover:bg-[#f4efe8] hover:text-[#252a30] sm:h-9 sm:w-auto sm:rounded-lg sm:px-3"
         >
           <Upload className="h-4 w-4" />
           <span className="hidden sm:inline">Import</span>
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[calc(100svh-24px)] overflow-y-auto rounded-2xl border-[#d9dedb] bg-white text-[#18221f] shadow-[0_24px_70px_rgba(15,31,27,0.24)] sm:max-w-[760px]">
+      <DialogContent className="max-h-[calc(100svh-24px)] overflow-y-auto rounded-2xl border-[#ded7cc] bg-white text-[#252a30] shadow-[0_24px_70px_rgba(37,42,48,0.24)] sm:max-w-[760px]">
         <DialogHeader>
-          <DialogTitle className="text-xl tracking-[-0.02em] text-[#18221f]">
+          <DialogTitle className="text-xl tracking-[-0.02em] text-[#252a30]">
             {stage === "choose" ? "Import dealers" : "Review import"}
           </DialogTitle>
-          <DialogDescription className="leading-6 text-[#66716d]">
+          <DialogDescription className="leading-6 text-[#6f6a65]">
             {stage === "choose"
               ? "Upload structured data or extract rows from an image or PDF. Nothing is added until you review it."
               : `${sourceName} · ${draftRows.length} extracted row${draftRows.length === 1 ? "" : "s"}`}
@@ -2000,14 +2188,14 @@ function ImportDealersDialog({
                 warning
               />
             </div>
-            <div className="rounded-xl border border-[#d9dedb] bg-white p-4">
+            <div className="rounded-xl border border-[#ded7cc] bg-white p-4">
               <div className="flex items-start gap-3">
-                <FileJson className="mt-0.5 h-5 w-5 shrink-0 text-[#173a34]" />
+                <FileJson className="mt-0.5 h-5 w-5 shrink-0 text-[#252a44]" />
                 <div>
-                  <p className="text-sm font-semibold text-[#26312e]">
+                  <p className="text-sm font-semibold text-[#252a30]">
                     {REQUIRED_IMPORT_COLUMNS.join(" · ")}
                   </p>
-                  <p className="mt-1 text-xs leading-5 text-[#6f7975]">
+                  <p className="mt-1 text-xs leading-5 text-[#6f6a65]">
                     Optional: FULL ADDRESS. Address rows get address-level pins; otherwise pins use the PIN-code location. Up to 500 structured rows; OCR up to 50.
                   </p>
                 </div>
@@ -2018,7 +2206,7 @@ function ImportDealersDialog({
             ) : null}
             <DialogFooter>
               <Button
-                className="w-full bg-[#d9f36b] text-[#173a34] transition-[transform,background-color] active:scale-[0.98] hover:bg-[#cce960] sm:w-auto"
+                className="w-full bg-[#b65a38] text-white transition-[transform,background-color] active:scale-[0.98] hover:bg-[#a64b2f] sm:w-auto"
                 disabled={importing}
                 onClick={() => fileRef.current?.click()}
               >
@@ -2050,25 +2238,25 @@ function ImportDealersDialog({
               </div>
             </div>
             {sourceKind === "ocr" ? (
-              <details className="rounded-xl border border-[#d9dedb] bg-[#f8faf8] p-3">
-                <summary className="cursor-pointer text-sm font-semibold text-[#35413d]">
+              <details className="rounded-xl border border-[#ded7cc] bg-[#fbf7f1] p-3">
+                <summary className="cursor-pointer text-sm font-semibold text-[#34333a]">
                   View or correct extracted text
                 </summary>
                 <div className="mt-3 space-y-3">
-                  <p className="text-xs leading-5 text-[#6f7975]">
+                  <p className="text-xs leading-5 text-[#6f6a65]">
                     Keep one dealer per line. Separate columns with tabs, commas, pipes, semicolons, or two spaces.
                   </p>
                   <Textarea
                     value={extractedText}
                     onChange={(event) => setExtractedText(event.target.value)}
-                    className="min-h-32 border-[#cfd6d2] bg-white font-mono text-xs text-[#18221f]"
+                    className="min-h-32 border-[#d6cfc4] bg-white font-mono text-xs text-[#252a30]"
                     aria-label="Extracted OCR text"
                   />
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="border-[#cfd6d2] bg-white text-[#35413d] transition-transform active:scale-[0.98]"
+                    className="border-[#d6cfc4] bg-white text-[#34333a] transition-transform active:scale-[0.98]"
                     onClick={() => {
                       const parsed = parseExtractedText(extractedText);
                       if (parsed.length > OCR_IMPORT_LIMIT) {
@@ -2091,7 +2279,7 @@ function ImportDealersDialog({
             ) : null}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <p className="text-sm font-semibold text-[#26312e]">
+                <p className="text-sm font-semibold text-[#252a30]">
                   {invalidCount
                     ? `${invalidCount} row${invalidCount === 1 ? " needs" : "s need"} attention`
                     : "All rows are ready"}
@@ -2112,7 +2300,7 @@ function ImportDealersDialog({
                 type="button"
                 size="sm"
                 variant="outline"
-                className="border-[#cfd6d2] bg-white text-[#35413d] transition-transform active:scale-[0.98]"
+                className="border-[#d6cfc4] bg-white text-[#34333a] transition-transform active:scale-[0.98]"
                 disabled={draftRows.length >= rowLimit}
                 onClick={addDraftRow}
               >
@@ -2150,7 +2338,7 @@ function ImportDealersDialog({
                 type="button"
                 variant="outline"
                 disabled={importing}
-                className="border-[#cfd6d2] bg-white text-[#35413d] transition-transform active:scale-[0.98]"
+                className="border-[#d6cfc4] bg-white text-[#34333a] transition-transform active:scale-[0.98]"
                 onClick={resetImport}
               >
                 Choose another file
@@ -2158,7 +2346,7 @@ function ImportDealersDialog({
               <Button
                 type="button"
                 disabled={importing || !draftRows.length || invalidCount > 0}
-                className="bg-[#d9f36b] text-[#173a34] transition-[transform,background-color] active:scale-[0.98] hover:bg-[#cce960]"
+                className="bg-[#b65a38] text-white transition-[transform,background-color] active:scale-[0.98] hover:bg-[#a64b2f]"
                 onClick={commitImport}
               >
                 {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
@@ -2183,18 +2371,18 @@ function DealerSearch({
 }) {
   return (
     <div className="relative">
-      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#75807c]" />
+      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6f6a65]" />
       <Input
         value={query}
         onChange={(event) => onChange(event.target.value)}
         placeholder="Search dealer, address, area or PIN"
-        className="h-11 border-[#d7dcda] bg-white pl-9 pr-10 text-[15px] text-[#18221f] shadow-none placeholder:text-[#929c98] focus-visible:ring-[#2f6fe4]"
+        className="h-11 border-[#d6cfc4] bg-white pl-9 pr-10 text-[15px] text-[#252a30] shadow-none placeholder:text-[#6f6a65] focus-visible:ring-[#356a9a]"
         aria-label="Search dealers"
       />
       {query ? (
         <button
           type="button"
-          className="absolute right-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg text-[#75807c] transition-[transform,background-color] active:scale-[0.97] hover:bg-[#eef0ed]"
+          className="absolute right-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg text-[#6f6a65] transition-[transform,background-color] active:scale-[0.97] hover:bg-[#f7f3ea]"
           onClick={() => onChange("")}
           aria-label="Clear search"
         >
@@ -2243,7 +2431,7 @@ function SalespersonFilters({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-[#cfd6d2] bg-white px-3 text-left text-sm font-semibold text-[#26312e] shadow-sm transition-[transform,border-color,box-shadow] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2f6fe4]"
+          className={cn(dropdownTriggerClass, "flex items-center justify-between gap-3 text-left font-semibold outline-none")}
           aria-label={`Filter by salesperson, ${summary}`}
         >
           <span className="flex min-w-0 items-center gap-2.5">
@@ -2256,13 +2444,13 @@ function SalespersonFilters({
                 />
               ))}
               {activePeople.length === 0 ? (
-                <span className="h-3.5 w-3.5 rounded-full border border-[#9da6a2] bg-[#d8ddda]" />
+                <span className="h-3.5 w-3.5 rounded-full border border-[#aaa29a] bg-[#ded7cc]" />
               ) : null}
             </span>
             <span className="truncate">{summary}</span>
           </span>
           <ChevronDown
-            className={`h-4 w-4 shrink-0 text-[#74807c] transition-transform duration-150 ${open ? "rotate-180" : ""}`}
+            className={`h-4 w-4 shrink-0 text-[#6f6a65] transition-transform duration-150 ${open ? "rotate-180" : ""}`}
             aria-hidden="true"
           />
         </button>
@@ -2270,25 +2458,27 @@ function SalespersonFilters({
       <PopoverContent
         align="start"
         sideOffset={6}
-        className="w-[var(--radix-popover-trigger-width)] min-w-[260px] overflow-hidden rounded-xl border-[#d9dedb] bg-white p-0 shadow-[0_16px_42px_rgba(23,58,52,0.18)]"
+        className={cn(dropdownContentClass, "w-[var(--radix-popover-trigger-width)] min-w-[260px] overflow-hidden p-0")}
       >
-        <div className="border-b border-[#e1e5e2] p-3">
-          <p className="text-sm font-semibold text-[#26312e]">Salespeople</p>
-          <p className="mt-0.5 text-xs text-[#74807c]">
-            {activePeople.length} of {salespeople.length} visible
-          </p>
-          <div className="relative mt-3">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#7a8581]" />
+        <div className="border-b border-[#e9e2d8] p-2">
+          <div className="flex items-center justify-between gap-3 px-1 pb-1.5">
+            <p className="text-xs font-semibold text-[#5f5b57]">Salespeople</p>
+            <p className="text-xs text-[#6f6a65]">
+              {activePeople.length} of {salespeople.length} visible
+            </p>
+          </div>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#6f6a65]" />
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search salespeople"
               aria-label="Search salespeople"
-              className="h-9 border-[#cfd6d2] bg-[#fbfcfb] pl-8 text-sm text-[#18221f]"
+              className={dropdownSearchClass}
             />
           </div>
         </div>
-        <div className="scrollbar-thin max-h-64 overflow-y-auto p-1.5">
+        <div className="scrollbar-thin max-h-56 overflow-y-auto p-1.5">
           {filteredPeople.length ? (
             filteredPeople.map((person) => {
               const active = activePeople.includes(person);
@@ -2299,13 +2489,13 @@ function SalespersonFilters({
                   role="checkbox"
                   aria-checked={active}
                   onClick={() => onToggle(person)}
-                  className="flex min-h-10 w-full items-center gap-3 rounded-lg px-2.5 text-left text-sm text-[#2f3b37] transition-colors hover:bg-[#f1f4f2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2f6fe4]"
+                  className={cn(dropdownItemClass, "flex w-full items-center gap-3 text-left", active && "bg-[#f8eee9] font-medium")}
                 >
                   <span
                     className={`grid h-4 w-4 shrink-0 place-items-center rounded border ${
                       active
-                        ? "border-[#173a34] bg-[#173a34] text-white"
-                        : "border-[#b8c1bd] bg-white"
+                        ? "border-[#252a44] bg-[#252a44] text-white"
+                        : "border-[#c8beb1] bg-white"
                     }`}
                     aria-hidden="true"
                   >
@@ -2321,18 +2511,18 @@ function SalespersonFilters({
               );
             })
           ) : (
-            <p className="px-3 py-6 text-center text-xs text-[#7a8581]">
+            <p className="px-3 py-6 text-center text-xs text-[#6f6a65]">
               No matching salespeople
             </p>
           )}
         </div>
-        <div className="flex items-center justify-between border-t border-[#e1e5e2] p-2">
+        <div className="flex items-center justify-between border-t border-[#e9e2d8] p-1.5">
           <Button
             type="button"
             size="sm"
             variant="ghost"
             disabled={allActive}
-            className="h-8 text-xs text-[#35413d] transition-transform active:scale-[0.97]"
+            className="h-9 text-xs text-[#34333a] transition-transform active:scale-[0.97]"
             onClick={onShowAll}
           >
             Select all
@@ -2342,7 +2532,7 @@ function SalespersonFilters({
             size="sm"
             variant="ghost"
             disabled={activePeople.length === 0}
-            className="h-8 text-xs text-[#6d7773] transition-transform active:scale-[0.97]"
+            className="h-9 text-xs text-[#6f6a65] transition-transform active:scale-[0.97]"
             onClick={onClearAll}
           >
             Clear all
@@ -2393,12 +2583,12 @@ function SearchableValueFilter({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex h-10 w-full min-w-0 items-center justify-between gap-2 rounded-md border border-[#cfd6d2] bg-white px-3 text-left text-sm text-[#26312e] shadow-none transition-[transform,border-color,box-shadow] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2f6fe4]"
+          className={cn(dropdownTriggerClass, "flex min-w-0 items-center justify-between gap-2 text-left outline-none")}
           aria-label={`Filter by ${label.toLowerCase()}, ${selectedLabel}`}
         >
           <span className="truncate">{selectedLabel}</span>
           <ChevronDown
-            className={`h-4 w-4 shrink-0 text-[#74807c] transition-transform duration-150 ${open ? "rotate-180" : ""}`}
+            className={`h-4 w-4 shrink-0 text-[#6f6a65] transition-transform duration-150 ${open ? "rotate-180" : ""}`}
             aria-hidden="true"
           />
         </button>
@@ -2406,18 +2596,17 @@ function SearchableValueFilter({
       <PopoverContent
         align="start"
         sideOffset={6}
-        className="w-[var(--radix-popover-trigger-width)] min-w-[230px] overflow-hidden rounded-xl border-[#d9dedb] bg-white p-0 shadow-[0_16px_42px_rgba(23,58,52,0.18)]"
+        className={cn(dropdownContentClass, "w-[var(--radix-popover-trigger-width)] min-w-[230px] overflow-hidden p-0")}
       >
-        <div className="border-b border-[#e1e5e2] p-3">
-          <p className="text-sm font-semibold text-[#26312e]">{label}</p>
-          <div className="relative mt-2.5">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#7a8581]" />
+        <div className="border-b border-[#e9e2d8] p-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#6f6a65]" />
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder={searchPlaceholder}
               aria-label={searchPlaceholder}
-              className="h-9 border-[#cfd6d2] bg-[#fbfcfb] pl-8 text-sm text-[#18221f]"
+              className={dropdownSearchClass}
             />
           </div>
         </div>
@@ -2427,10 +2616,10 @@ function SearchableValueFilter({
               type="button"
               aria-pressed={value === "all"}
               onClick={() => selectValue("all")}
-              className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-sm text-[#2f3b37] transition-colors hover:bg-[#f1f4f2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2f6fe4]"
+              className={cn(dropdownItemClass, "flex w-full items-center gap-2.5 text-left", value === "all" && "bg-[#f8eee9] font-medium")}
             >
               <Check
-                className={`h-4 w-4 shrink-0 ${value === "all" ? "text-[#173a34]" : "text-transparent"}`}
+                className={`h-4 w-4 shrink-0 ${value === "all" ? "text-[#252a44]" : "text-transparent"}`}
                 aria-hidden="true"
               />
               <span className="truncate font-medium">{allLabel}</span>
@@ -2443,17 +2632,17 @@ function SearchableValueFilter({
                 type="button"
                 aria-pressed={value === option}
                 onClick={() => selectValue(option)}
-                className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-sm text-[#2f3b37] transition-colors hover:bg-[#f1f4f2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2f6fe4]"
+                className={cn(dropdownItemClass, "flex w-full items-center gap-2.5 text-left", value === option && "bg-[#f8eee9] font-medium")}
               >
                 <Check
-                  className={`h-4 w-4 shrink-0 ${value === option ? "text-[#173a34]" : "text-transparent"}`}
+                  className={`h-4 w-4 shrink-0 ${value === option ? "text-[#252a44]" : "text-transparent"}`}
                   aria-hidden="true"
                 />
                 <span className="truncate font-medium">{option}</span>
               </button>
             ))
           ) : (
-            <p className="px-3 py-6 text-center text-xs text-[#7a8581]">
+            <p className="px-3 py-6 text-center text-xs text-[#6f6a65]">
               No matches
             </p>
           )}
@@ -2485,6 +2674,7 @@ type DealerFilterControlProps = {
   areas: string[];
   activeFilterCount: number;
   onResetFilters: () => void;
+  onCopyView: () => void;
 };
 
 function DealerFilterControls({
@@ -2509,11 +2699,11 @@ function DealerFilterControls({
   areas,
   activeFilterCount,
   onResetFilters,
+  onCopyView,
   layout,
 }: DealerFilterControlProps & { layout: "sidebar" | "wide" }) {
   const fieldClass = "grid min-w-0 gap-1.5";
-  const triggerClass =
-    "h-10 w-full border-[#cfd6d2] bg-white text-sm text-[#26312e] shadow-none";
+  const triggerClass = "w-full";
 
   return (
     <div className="space-y-4">
@@ -2526,7 +2716,7 @@ function DealerFilterControls({
       >
         <DealerSearch query={query} onChange={onQueryChange} />
         {showSalespersonFilter ? <div>
-          <p className="mb-1.5 text-xs font-semibold text-[#65716d]">
+          <p className="mb-1.5 text-xs font-semibold text-[#6f6a65]">
             Salesperson
           </p>
           <SalespersonFilters
@@ -2543,13 +2733,13 @@ function DealerFilterControls({
         className={
           layout === "wide"
             ? showQualityFilter
-              ? "grid gap-3 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_1fr_auto] xl:items-end"
-              : "grid gap-3 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_auto] xl:items-end"
+              ? "grid gap-3 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_1fr_auto_auto] xl:items-end"
+              : "grid gap-3 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_auto_auto] xl:items-end"
             : "grid grid-cols-2 gap-3"
         }
       >
         <div className={fieldClass}>
-          <Label className="text-xs font-semibold text-[#65716d]">State</Label>
+          <Label className="text-xs font-semibold text-[#6f6a65]">State</Label>
           <Select
             value={stateFilter}
             onValueChange={(value) => onStateFilterChange(value as StateFilter)}
@@ -2559,14 +2749,15 @@ function DealerFilterControls({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All states</SelectItem>
-              <SelectItem value="Telangana">Telangana</SelectItem>
-              <SelectItem value="Andhra Pradesh">Andhra Pradesh</SelectItem>
+              {INDIAN_STATES.map((item) => (
+                <SelectItem key={item} value={item}>{item}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
 
         {showQualityFilter ? <div className={fieldClass}>
-          <Label className="text-xs font-semibold text-[#65716d]">
+          <Label className="text-xs font-semibold text-[#6f6a65]">
             Data quality
           </Label>
           <Select
@@ -2584,14 +2775,13 @@ function DealerFilterControls({
             <SelectContent>
               <SelectItem value="all">All quality</SelectItem>
               <SelectItem value="verified">Verified</SelectItem>
-              <SelectItem value="review">Needs review</SelectItem>
               <SelectItem value="unchecked">Not checked</SelectItem>
             </SelectContent>
           </Select>
         </div> : null}
 
         <div className={fieldClass}>
-          <Label className="text-xs font-semibold text-[#65716d]">
+          <Label className="text-xs font-semibold text-[#6f6a65]">
             PIN code
           </Label>
           <SearchableValueFilter
@@ -2605,7 +2795,7 @@ function DealerFilterControls({
         </div>
 
         <div className={fieldClass}>
-          <Label className="text-xs font-semibold text-[#65716d]">Area</Label>
+          <Label className="text-xs font-semibold text-[#6f6a65]">Area</Label>
           <SearchableValueFilter
             label="Area"
             value={areaFilter}
@@ -2621,17 +2811,21 @@ function DealerFilterControls({
           variant="outline"
           disabled={activeFilterCount === 0}
           onClick={onResetFilters}
-          className={`h-10 border-[#cfd6d2] bg-white text-[#4f5b57] transition-[transform,background-color] active:scale-[0.98] hover:bg-[#eef1ef] ${
+          className={`h-11 border-[#d6cfc4] bg-white text-[#5f5b57] transition-[transform,background-color] active:scale-[0.98] hover:bg-[#f4efe8] ${
             layout === "sidebar" ? "col-span-2" : ""
           }`}
         >
           <X className="h-3.5 w-3.5" />
           Reset filters
           {activeFilterCount ? (
-            <span className="rounded-full bg-[#e6ece8] px-1.5 py-0.5 text-[10px] tabular-nums">
+            <span className="rounded-full bg-[#f4efe8] px-1.5 py-0.5 text-[11px] tabular-nums">
               {activeFilterCount}
             </span>
           ) : null}
+        </Button>
+        <Button type="button" variant="outline" onClick={onCopyView} className={`h-11 border-[#d6cfc4] bg-white ${layout === "sidebar" ? "col-span-2" : ""}`}>
+          <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
+          Copy view link
         </Button>
       </div>
     </div>
@@ -2648,30 +2842,64 @@ function MobileMapFilters({
       <DialogTrigger asChild>
         <button
           type="button"
-          className="absolute left-3 top-3 z-10 inline-flex min-h-10 items-center gap-2 rounded-xl border border-white/75 bg-white/95 px-3 text-xs font-semibold text-[#35413d] shadow-[0_8px_24px_rgba(25,38,34,0.13)] backdrop-blur transition-[transform,background-color] active:scale-[0.97] hover:bg-white lg:hidden"
+          className="absolute left-3 top-3 z-10 inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/75 bg-white/95 px-3 text-xs font-semibold text-[#34333a] shadow-[0_8px_24px_rgba(37,42,68,0.13)] backdrop-blur transition-[transform,background-color] active:scale-[0.97] hover:bg-white lg:hidden"
           aria-label={`Filter map dealers${filters.activeFilterCount ? `, ${filters.activeFilterCount} active` : ""}`}
         >
           <SlidersHorizontal className="h-4 w-4" />
           Filters
           {filters.activeFilterCount ? (
-            <span className="rounded-full bg-[#173a34] px-1.5 py-0.5 text-[10px] text-white tabular-nums">
+            <span className="rounded-full bg-[#252a44] px-1.5 py-0.5 text-[11px] text-white tabular-nums">
               {filters.activeFilterCount}
             </span>
           ) : null}
         </button>
       </DialogTrigger>
-      <DialogContent className="max-h-[calc(100svh-24px)] overflow-y-auto rounded-2xl border-[#d9dedb] bg-[#f7f8f6] text-[#18221f] shadow-[0_24px_70px_rgba(15,31,27,0.24)] sm:max-w-[520px]">
+      <DialogContent className="max-h-[calc(100svh-24px)] overflow-y-auto rounded-2xl border-[#ded7cc] bg-[#fffcf7] text-[#252a30] shadow-[0_24px_70px_rgba(37,42,48,0.24)] sm:max-w-[520px]">
         <DialogHeader>
-          <DialogTitle className="text-xl tracking-[-0.02em] text-[#18221f]">
+          <DialogTitle className="text-xl tracking-[-0.02em] text-[#252a30]">
             Filter map dealers
           </DialogTitle>
-          <DialogDescription className="leading-6 text-[#66716d]">
+          <DialogDescription className="leading-6 text-[#6f6a65]">
             The same filters stay active when you switch to the Dealers tab.
           </DialogDescription>
         </DialogHeader>
         <DealerFilterControls {...filters} layout="sidebar" />
       </DialogContent>
     </Dialog>
+  );
+}
+
+function MobileDirectoryFilters({
+  filters,
+  resultCount,
+}: {
+  filters: DealerFilterControlProps;
+  resultCount: number;
+}) {
+  return (
+    <div className="mt-5 space-y-3 rounded-2xl border border-[#ded7cc] bg-white p-3 shadow-[0_8px_24px_rgba(37,42,68,0.05)] lg:hidden">
+      <DealerSearch query={filters.query} onChange={filters.onQueryChange} />
+      <div className="flex items-center justify-between gap-3">
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button type="button" variant="outline" className="h-11 border-[#d6cfc4] bg-white">
+              <SlidersHorizontal aria-hidden="true" /> Filters
+              {filters.activeFilterCount ? (
+                <span className="rounded-full bg-[#252a44] px-1.5 py-0.5 text-xs text-white tabular-nums">{filters.activeFilterCount}</span>
+              ) : null}
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-h-[calc(100svh-24px)] overflow-y-auto rounded-2xl border-[#ded7cc] bg-[#fffcf7] text-[#252a30] sm:max-w-[520px]">
+            <DialogHeader>
+              <DialogTitle>Filter dealers</DialogTitle>
+              <DialogDescription>Refine the directory by owner, state, quality, PIN code, or area.</DialogDescription>
+            </DialogHeader>
+            <DealerFilterControls {...filters} layout="sidebar" />
+          </DialogContent>
+        </Dialog>
+        <p className="text-sm font-medium text-[#6f6a65]">{resultCount} {resultCount === 1 ? "dealer" : "dealers"}</p>
+      </div>
+    </div>
   );
 }
 
@@ -2728,46 +2956,114 @@ function DealerQualityBadge({ dealer }: { dealer: Dealer }) {
 
 function DealerDirectory({
   active,
-  dealers,
+  allDealers,
   filters,
   onSelect,
   onUpdate,
   onDelete,
   onAdd,
   onImport,
+  onReviewResolved,
+  pendingReviewCount,
+  filterRevision,
   canManage,
 }: {
   active: boolean;
-  dealers: Dealer[];
+  allDealers: DealerSummary[];
   filters: DealerFilterControlProps;
-  onSelect: (dealer: Dealer) => void;
+  onSelect: (dealer: DealerSummary) => void;
   onUpdate: (dealer: Dealer) => Promise<boolean>;
-  onDelete: (dealer: Dealer) => Promise<void>;
+  onDelete: (dealer: DealerSummary) => Promise<void>;
   onAdd: (dealer: Omit<Dealer, "id">) => Promise<boolean>;
   onImport: (dealers: Array<Omit<Dealer, "id">>) => Promise<number>;
+  onReviewResolved: (dealer: Dealer) => void;
+  pendingReviewCount: number;
+  filterRevision: number;
   canManage: boolean;
 }) {
   const [editingDealer, setEditingDealer] = useState<Dealer | null>(null);
-  const [deletingDealer, setDeletingDealer] = useState<Dealer | null>(null);
+  const [deletingDealer, setDeletingDealer] = useState<DealerSummary | null>(null);
+  const [pagination, setPagination] = useState({ revision: -1, page: 1 });
+  const [pageResult, setPageResult] = useState<{ dealers: DealerSummary[]; total: number; key: string } | null>(null);
+  const [pageError, setPageError] = useState<{ key: string; message: string } | null>(null);
+  const [pageRetry, setPageRetry] = useState(0);
+  const filterKey = dealerFilterKey({
+    query: filters.query,
+    salespeople: filters.activePeople,
+    state: filters.stateFilter,
+    quality: canManage ? filters.qualityFilter : "all",
+    pincode: filters.pincodeFilter,
+    area: filters.areaFilter,
+  });
+  const currentPage = pageForFilterRevision(pagination, filterRevision);
+  const requestKey = `${filterRevision}:${filterKey}:${currentPage}`;
+  useEffect(() => {
+    if (!active) return;
+    let cancelled = false;
+    const requestFilters = {
+      query: filters.query,
+      salespeople: filters.activePeople,
+      state: filters.stateFilter,
+      quality: canManage ? filters.qualityFilter : "all" as const,
+      pincode: filters.pincodeFilter,
+      area: filters.areaFilter,
+    };
+    void fetchDealerDirectoryPage(requestFilters, currentPage)
+      .then((result) => {
+        if (cancelled) return;
+        setPageResult({ ...result, key: requestKey });
+        setPageError(null);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setPageError({
+          key: requestKey,
+          message: error instanceof Error ? error.message : "The directory could not load.",
+        });
+      });
+    return () => { cancelled = true; };
+  // filterKey is the stable request identity; allDealers changes only after a mutation.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, allDealers, canManage, currentPage, filterKey, pageRetry, requestKey]);
+
+  const currentResult = pageResult?.key === requestKey ? pageResult : null;
+  const currentError = pageError?.key === requestKey ? pageError.message : null;
+  const visibleDealers = currentResult?.dealers ?? [];
+  const total = currentResult?.total ?? 0;
+  const pageSize = 100;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  async function startEditingDealer(dealer: DealerSummary) {
+    try {
+      setEditingDealer(await fetchDealerDetail(dealer.id));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Dealer details could not be loaded.");
+    }
+  }
+
   return (
     <section
       id="dealer-directory-panel"
+      role="tabpanel"
       hidden={!active}
-      aria-labelledby="dealer-directory-title"
-      className="h-[calc(100svh-120px)] overflow-y-auto bg-[#eef0ed]"
+      aria-labelledby="workspace-dealers-tab"
+      className="h-[calc(100svh-120px)] overflow-y-auto bg-[#f7f3ea]"
     >
       <div className="mx-auto w-full max-w-[1280px] px-4 py-5 sm:px-6 sm:py-7 lg:px-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#73807b]">
+            <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#6f6a65]">
               Dealer directory
             </p>
             <h2
               id="dealer-directory-title"
-              className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-[#18221f] sm:text-3xl"
+              className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-[#252a30] sm:text-3xl"
             >
               {canManage ? "All dealers" : "My dealers"}
             </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6f6a65]">
+              {canManage
+                ? "Maintain dealer ownership, postal details, and the addresses used for route planning."
+                : "Review your assigned dealers and the location details used for daily routes."}
+            </p>
           </div>
           {canManage ? (
             <div className="flex items-center gap-2">
@@ -2780,25 +3076,38 @@ function DealerDirectory({
           ) : null}
         </div>
 
-        <div className="mt-5 rounded-2xl border border-[#d8ddda] bg-white p-3 shadow-[0_8px_24px_rgba(25,38,34,0.05)] sm:p-4">
-          <div className="mb-3 flex items-center justify-between text-xs font-semibold text-[#65716d]">
+        {canManage ? (
+          <DealerReviewQueue
+            dealers={allDealers}
+            salespeople={filters.salespeople}
+            initialPendingCount={pendingReviewCount}
+            onEditDealer={(dealer) => { void startEditingDealer(dealer); }}
+            onResolved={onReviewResolved}
+          />
+        ) : null}
+
+        <MobileDirectoryFilters filters={filters} resultCount={total} />
+        <div className="mt-5 hidden rounded-2xl border border-[#ded7cc] bg-white p-3 shadow-[0_8px_24px_rgba(37,42,68,0.05)] sm:p-4 lg:block">
+          <div className="mb-3 flex items-center justify-between text-xs font-semibold text-[#6f6a65]">
             <span>Filters</span>
             <span>
-              {dealers.length} {dealers.length === 1 ? "dealer" : "dealers"}
+              {total} {total === 1 ? "dealer" : "dealers"}
             </span>
           </div>
           <DealerFilterControls {...filters} layout="wide" />
         </div>
 
-        {dealers.length ? (
+        {currentError ? <div role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{currentError} <Button type="button" variant="outline" className="ml-2" onClick={() => { setPageError(null); setPageRetry((value) => value + 1); }}>Retry</Button></div> : null}
+        {!currentResult && !currentError ? <WorkspaceLoading label="Loading dealer directory…" /> : null}
+        {visibleDealers.length ? (
           <>
             <ul className="mt-4 space-y-2 lg:hidden">
-              {dealers.map((dealer) => (
+              {visibleDealers.map((dealer) => (
                 <li key={dealer.id} className="relative">
                   <button
                     type="button"
                     onClick={() => onSelect(dealer)}
-                    className={`flex min-h-24 w-full items-center gap-3 rounded-2xl border border-[#d8ddda] bg-white p-3 text-left shadow-[0_6px_18px_rgba(25,38,34,0.04)] transition-[transform,background-color] active:scale-[0.99] ${canManage ? "pr-28" : "pr-4"}`}
+                    className={`flex min-h-24 w-full items-center gap-3 rounded-2xl border border-[#ded7cc] bg-white p-3 text-left shadow-[0_6px_18px_rgba(37,42,68,0.04)] transition-[transform,background-color] active:scale-[0.99] ${canManage ? "pr-28" : "pr-4"}`}
                   >
                     <span
                       className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-white shadow-sm"
@@ -2810,22 +3119,22 @@ function DealerDirectory({
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-1.5">
-                        <span className="truncate text-sm font-semibold text-[#26312e]">
+                        <span className="truncate text-sm font-semibold text-[#252a30]">
                           {dealer.dealer}
                         </span>
                         {dealer.reviewNote ? (
                           <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
                         ) : null}
                       </span>
-                      <span className="mt-1 block truncate text-xs text-[#76817d]">
+                      <span className="mt-1 block truncate text-xs text-[#6f6a65]">
                         {dealer.area} · {dealer.pincode}
                       </span>
                       {dealer.address ? (
-                        <span className="mt-1 block truncate text-[11px] text-[#68746f]">
+                        <span className="mt-1 block truncate text-[11px] text-[#6f6a65]">
                           {dealer.address}
                         </span>
                       ) : null}
-                      <span className="mt-1 flex items-center gap-1.5 text-[11px] font-semibold text-[#596560]">
+                      <span className="mt-1 flex items-center gap-1.5 text-[11px] font-semibold text-[#5f5b57]">
                         <span
                           className="h-2 w-2 rounded-full"
                           style={{
@@ -2844,9 +3153,9 @@ function DealerDirectory({
                   {canManage ? <div className="absolute right-2 top-1/2 flex -translate-y-1/2 gap-1">
                     <button
                       type="button"
-                      onClick={() => setEditingDealer(dealer)}
+                      onClick={() => { void startEditingDealer(dealer); }}
                       aria-label={`Edit ${dealer.dealer}`}
-                      className="grid h-11 w-11 place-items-center rounded-xl border border-[#d8ddda] bg-white text-[#596560] shadow-sm transition-[transform,background-color] active:scale-[0.96] hover:bg-[#eef1ef] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2f6fe4]"
+                      className="grid h-11 w-11 place-items-center rounded-xl border border-[#ded7cc] bg-white text-[#5f5b57] shadow-sm transition-[transform,background-color] active:scale-[0.96] hover:bg-[#f4efe8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#356a9a]"
                     >
                       <Pencil className="h-4 w-4" />
                     </button>
@@ -2863,9 +3172,9 @@ function DealerDirectory({
               ))}
             </ul>
 
-            <div className="mt-4 hidden overflow-hidden rounded-2xl border border-[#d8ddda] bg-white shadow-[0_8px_24px_rgba(25,38,34,0.05)] lg:block">
+            <div className="mt-4 hidden overflow-hidden rounded-2xl border border-[#ded7cc] bg-white shadow-[0_8px_24px_rgba(37,42,68,0.05)] lg:block">
               <table className="w-full border-collapse text-left">
-                <thead className="bg-[#f5f7f5] text-[11px] font-semibold uppercase tracking-[0.08em] text-[#74807c]">
+                <thead className="bg-[#f6f0e8] text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6f6a65]">
                   <tr>
                     <th scope="col" className="px-5 py-3.5">Dealer</th>
                     {canManage ? <th scope="col" className="px-4 py-3.5">Salesperson</th> : null}
@@ -2876,17 +3185,17 @@ function DealerDirectory({
                     {canManage ? <th scope="col" className="px-5 py-3.5 text-right">Actions</th> : null}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#e3e7e5]">
-                  {dealers.map((dealer) => (
+                <tbody className="divide-y divide-[#e9e2d8]">
+                  {visibleDealers.map((dealer) => (
                     <tr
                       key={dealer.id}
-                      className="text-sm text-[#34403c] transition-colors hover:bg-[#f8faf8]"
+                      className="text-sm text-[#34333a] transition-colors hover:bg-[#fbf7f1]"
                     >
                       <td className="px-5 py-3.5">
                         <button
                           type="button"
                           onClick={() => onSelect(dealer)}
-                          className="flex items-center gap-3 text-left font-semibold text-[#202b27] outline-none focus-visible:rounded-lg focus-visible:ring-2 focus-visible:ring-[#2f6fe4] focus-visible:ring-offset-2"
+                          className="flex items-center gap-3 text-left font-semibold text-[#252a30] outline-none focus-visible:rounded-lg focus-visible:ring-2 focus-visible:ring-[#356a9a] focus-visible:ring-offset-2"
                         >
                           <span
                             className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-white shadow-sm"
@@ -2916,7 +3225,7 @@ function DealerDirectory({
                       </td> : null}
                       <td className="max-w-[260px] px-4 py-3.5">
                         <span className="block font-medium">{dealer.area}</span>
-                        <span className="mt-0.5 block truncate text-xs text-[#78827e]">
+                        <span className="mt-0.5 block truncate text-xs text-[#6f6a65]">
                           {dealer.address ?? "No full address"}
                         </span>
                       </td>
@@ -2931,8 +3240,8 @@ function DealerDirectory({
                         <div className="flex justify-end gap-1">
                           <button
                             type="button"
-                            onClick={() => setEditingDealer(dealer)}
-                            className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-[#35413d] transition-[transform,background-color] active:scale-[0.97] hover:bg-[#e8eeeb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2f6fe4]"
+                            onClick={() => { void startEditingDealer(dealer); }}
+                            className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-[#34333a] transition-[transform,background-color] active:scale-[0.97] hover:bg-[#f4efe8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#356a9a]"
                             aria-label={`Edit ${dealer.dealer}`}
                           >
                             <Pencil className="h-3.5 w-3.5" />
@@ -2941,7 +3250,7 @@ function DealerDirectory({
                           <button
                             type="button"
                             onClick={() => onSelect(dealer)}
-                            className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-[#173a34] transition-[transform,background-color] active:scale-[0.97] hover:bg-[#e8eeeb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2f6fe4]"
+                            className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-[#252a44] transition-[transform,background-color] active:scale-[0.97] hover:bg-[#f4efe8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#356a9a]"
                             aria-label={`View ${dealer.dealer} on map`}
                           >
                             Map
@@ -2950,11 +3259,11 @@ function DealerDirectory({
                           <button
                             type="button"
                             onClick={() => setDeletingDealer(dealer)}
-                            className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-red-600 transition-[transform,background-color] active:scale-[0.97] hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                            className="grid h-9 w-9 place-items-center rounded-lg text-[#6f6a65] transition-[transform,background-color,color] active:scale-[0.97] hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
                             aria-label={`Delete ${dealer.dealer}`}
+                            title={`Delete ${dealer.dealer}`}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
-                            Delete
                           </button>
                         </div>
                       </td> : null}
@@ -2963,20 +3272,47 @@ function DealerDirectory({
                 </tbody>
               </table>
             </div>
+            {pageCount > 1 ? (
+              <div className="mt-4 flex flex-col gap-3 rounded-xl border border-[#ded7cc] bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs text-[#6f6a65]">
+                  Showing {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, total)} of {total} dealers
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={currentPage <= 1}
+                    onClick={() => setPagination({ revision: filterRevision, page: Math.max(1, currentPage - 1) })}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={currentPage >= pageCount}
+                    onClick={() => setPagination({ revision: filterRevision, page: Math.min(pageCount, currentPage + 1) })}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            ) : null}
           </>
-        ) : (
-          <div className="mt-4 grid min-h-64 place-items-center rounded-2xl border border-dashed border-[#cbd2cf] bg-white px-6 text-center">
+        ) : currentResult && total === 0 ? (
+          <div className="mt-4 grid min-h-64 place-items-center rounded-2xl border border-dashed border-[#d6cfc4] bg-white px-6 text-center">
             <div>
-              <CircleDot className="mx-auto mb-3 h-7 w-7 text-[#9ba39f]" />
-              <p className="text-sm font-semibold text-[#26312e]">
+              <CircleDot className="mx-auto mb-3 h-7 w-7 text-[#aaa29a]" />
+              <p className="text-sm font-semibold text-[#252a30]">
                 No dealers match
               </p>
-              <p className="mt-1 text-xs text-[#76817d]">
+              <p className="mt-1 text-xs text-[#6f6a65]">
                 Clear the search or adjust the filters.
               </p>
             </div>
           </div>
-        )}
+        ) : null}
       </div>
       {canManage && editingDealer ? (
         <EditDealerDialog
@@ -2991,15 +3327,15 @@ function DealerDirectory({
         open={Boolean(deletingDealer)}
         onOpenChange={(open) => !open && setDeletingDealer(null)}
       >
-        <AlertDialogContent className="rounded-2xl border-[#d9dedb] bg-white text-[#18221f] shadow-[0_24px_70px_rgba(15,31,27,0.24)]">
+        <AlertDialogContent className="rounded-2xl border-[#ded7cc] bg-white text-[#252a30] shadow-[0_24px_70px_rgba(37,42,48,0.24)]">
           <AlertDialogHeader>
-            <AlertDialogTitle className="tracking-[-0.02em] text-[#18221f]">
+            <AlertDialogTitle className="tracking-[-0.02em] text-[#252a30]">
               Delete dealer?
             </AlertDialogTitle>
-            <AlertDialogDescription className="leading-6 text-[#66716d]">
+            <AlertDialogDescription className="leading-6 text-[#6f6a65]">
               {deletingDealer ? (
                 <>
-                  <strong className="font-semibold text-[#35413d]">
+                  <strong className="font-semibold text-[#34333a]">
                     {deletingDealer.dealer}
                   </strong>{" "}
                   will be removed from the shared workspace. Its map pin and any
@@ -3009,7 +3345,7 @@ function DealerDirectory({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="border-[#cfd6d2] bg-white text-[#35413d] transition-transform active:scale-[0.98]">
+            <AlertDialogCancel className="border-[#d6cfc4] bg-white text-[#34333a] transition-transform active:scale-[0.98]">
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
@@ -3029,22 +3365,76 @@ function DealerDirectory({
   );
 }
 
+function WorkspaceLoading({ label }: { label: string }) {
+  return (
+    <div className="grid min-h-[420px] place-items-center px-6 text-center" role="status">
+      <div>
+        <Loader2 className="mx-auto h-7 w-7 animate-spin text-[#6f6a65]" aria-hidden="true" />
+        <p className="mt-3 text-sm font-semibold text-[#252a30]">{label}</p>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const router = useRouter();
-  const [dealers, setDealers] = useState<Dealer[]>([]);
+  const [dealers, setDealers] = useState<DealerSummary[]>([]);
   const [session, setSession] = useState<AppSession | null>(null);
   const [team, setTeam] = useState<SalespersonAccount[]>([]);
+  const [commerce, setCommerce] = useState<CommerceWorkspaceBootstrap | null>(null);
+  const [shop, setShop] = useState<ShopWorkspaceBootstrap | null>(null);
+  const [pendingDealerReviewCount, setPendingDealerReviewCount] = useState(0);
+  const [openedWorkspaceViews, setOpenedWorkspaceViews] = useState<WorkspaceView[]>([]);
   const [hydrated, setHydrated] = useState(false);
-  const postalValidationStarted = useRef(false);
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [bootstrapRetry, setBootstrapRetry] = useState(0);
+  const [commerceError, setCommerceError] = useState<string | null>(null);
+  const [shopError, setShopError] = useState<string | null>(null);
+  const [commerceRetry, setCommerceRetry] = useState(0);
+  const [shopRetry, setShopRetry] = useState(0);
   const [query, setQuery] = useState("");
+  const deferredQuery = useDeferredValue(query);
   const [activePeople, setActivePeople] = useState<string[]>([]);
   const [stateFilter, setStateFilter] = useState<StateFilter>("all");
   const [qualityFilter, setQualityFilter] = useState<QualityFilter>("all");
   const [pincodeFilter, setPincodeFilter] = useState("all");
   const [areaFilter, setAreaFilter] = useState("all");
+  const [mapSidebarExpansion, setMapSidebarExpansion] = useState({
+    filterKey: "",
+    limit: 50,
+  });
+  const [filterRevision, setFilterRevision] = useState(0);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [focusRequest, setFocusRequest] = useState<Dealer | null>(null);
-  const [workspaceView, setWorkspaceView] = useState<"map" | "dealers" | "routes" | "team">("map");
+  const [selectedActivity, setSelectedActivity] = useState<{
+    dealerId: number;
+    completedVisits: number;
+    lastCompletedAt: string | null;
+    nextDueAt: string | null;
+    frequencyDays: number;
+  } | null>(null);
+  const [activityError, setActivityError] = useState<number | null>(null);
+  const [activityRetry, setActivityRetry] = useState(0);
+  const [focusRequest, setFocusRequest] = useState<DealerSummary | null>(null);
+  const pendingDealerDeletes = useRef(new Map<number, number>());
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("map");
+
+  useEffect(() => {
+    if (selectedId === null || workspaceView !== "map") return;
+    const controller = new AbortController();
+    void fetch(`/api/dealers/${selectedId}/activity`, {
+      cache: "no-store", signal: controller.signal,
+    }).then(async (response) => {
+      if (!response.ok) throw new Error("Activity unavailable");
+      return response.json() as Promise<{ activity: Omit<NonNullable<typeof selectedActivity>, "dealerId"> }>;
+    }).then(({ activity }) => {
+      if (!controller.signal.aborted) setSelectedActivity({ dealerId: selectedId, ...activity });
+    }).catch(() => {
+      if (!controller.signal.aborted) setActivityError(selectedId);
+    });
+    return () => controller.abort();
+  }, [selectedId, workspaceView, activityRetry]);
+  const workspaceNavRef = useRef<HTMLElement>(null);
+  const [workspaceNavEdges, setWorkspaceNavEdges] = useState({ left: false, right: true });
 
   useEffect(() => {
     if (workspaceView !== "map") return;
@@ -3057,16 +3447,69 @@ export default function Home() {
   useEffect(() => {
     let cancelled = false;
 
+    // Show the account shell while the larger dealer dataset loads.
+    void fetchAppSession().then(({ session: account }) => {
+      if (!cancelled) setSession(account);
+    }).catch(() => {
+      // The workspace request handles authentication and retry messaging.
+    });
+
     async function loadWorkspace() {
       try {
         const workspace = await fetchWorkspaceBootstrap();
         if (cancelled) return;
+        setBootstrapError(null);
         setSession(workspace.session);
         setDealers(workspace.dealers);
         setTeam(workspace.salespeople);
-        setActivePeople(
-          workspace.salespeople.map((person) => person.normalizedName),
+        setPendingDealerReviewCount(workspace.pendingDealerReviewCount);
+        const allPeople = workspace.salespeople.map((person) => person.normalizedName);
+        const viewFilters = readDealerViewUrl(
+          new URL(window.location.href),
+          allPeople,
+          [...new Set(workspace.dealers.map((dealer) => dealer.pincode))],
+          [...new Set(workspace.dealers.map((dealer) => dealer.area))],
         );
+        setActivePeople(viewFilters?.salespeople ?? allPeople);
+        if (viewFilters) {
+          setQuery(viewFilters.query);
+          setStateFilter(viewFilters.state);
+          setQualityFilter(viewFilters.quality);
+          setPincodeFilter(viewFilters.pincode);
+          setAreaFilter(viewFilters.area);
+        }
+        const requestedView = new URLSearchParams(window.location.search).get(
+          "workspace",
+        );
+        const { field: fieldAccess, commerce: commerceAccess, shop: shopAccess } = workspace.access;
+        let initialView: WorkspaceView | null = null;
+        if (
+          fieldAccess &&
+          (requestedView === "map" ||
+            requestedView === "dealers" ||
+            requestedView === "routes")
+        ) {
+          initialView = requestedView;
+        } else if (
+          requestedView === "team" &&
+          workspace.session.roles.includes("admin")
+        ) {
+          initialView = "team";
+        } else if (requestedView === "commerce" && commerceAccess) {
+          initialView = "commerce";
+        } else if (requestedView === "shop" && shopAccess) {
+          initialView = "shop";
+        } else if (fieldAccess) {
+          initialView = "map";
+        } else if (!fieldAccess && commerceAccess) {
+          initialView = "commerce";
+        } else if (!fieldAccess && shopAccess) {
+          initialView = "shop";
+        }
+        if (initialView) {
+          setOpenedWorkspaceViews([initialView]);
+          setWorkspaceView(initialView);
+        }
         setHydrated(true);
       } catch (error: unknown) {
         if (cancelled) return;
@@ -3080,6 +3523,7 @@ export default function Home() {
         }
 
         setHydrated(true);
+        setBootstrapError(error instanceof Error ? error.message : "Your workspace session could not be loaded.");
         toast.error(
           error instanceof Error
             ? error.message
@@ -3093,44 +3537,128 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [bootstrapRetry]);
 
   useEffect(() => {
-    if (!hydrated || postalValidationStarted.current) return;
-    postalValidationStarted.current = true;
+    if (!hydrated) return;
+    const url = new URL(window.location.href);
+    if (workspaceView === "map") {
+      url.searchParams.delete("workspace");
+    } else {
+      url.searchParams.set("workspace", workspaceView);
+    }
+    window.history.replaceState(null, "", url);
+  }, [hydrated, workspaceView]);
 
-    void loadPostalDirectory()
-      .then((directory) => {
-        const datasetVersion = directory.meta.sourceSha256;
-        setDealers((current) =>
-          current.map((dealer) => {
-            if (dealer.validationSource === "manual") return dealer;
-            if (
-              dealer.validationDataset === datasetVersion &&
-              dealer.validationStatus !== "unavailable"
-            ) {
-              return dealer;
-            }
-            const validation = validatePostalDetails(
-              directory,
-              dealer.pincode,
-              dealer.state,
-              dealer.area,
-            );
-            return { ...dealer, ...postalValidationFields(validation) };
-          }),
-        );
+  const showWorkspace = (view: WorkspaceView) => {
+    setOpenedWorkspaceViews((current) =>
+      current.includes(view) ? current : [...current, view],
+    );
+    setWorkspaceView(view);
+  };
+
+  useEffect(() => {
+    if (!hydrated || workspaceView !== "commerce" || commerce) return;
+    let cancelled = false;
+    void fetchCommerceWorkspaceBootstrap()
+      .then((data) => {
+        if (!cancelled) { setCommerce(data); setCommerceError(null); }
       })
-      .catch(() => {
-        // Existing records stay visible if the local reference asset is unavailable.
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setCommerceError(error instanceof Error ? error.message : "Commerce operations could not be loaded.");
+          toast.error(error instanceof Error ? error.message : "Commerce operations could not be loaded.");
+        }
+      })
+    return () => {
+      cancelled = true;
+    };
+  }, [commerce, commerceRetry, hydrated, workspaceView]);
+
+  useEffect(() => {
+    if (!hydrated || workspaceView !== "shop" || shop) return;
+    let cancelled = false;
+    void fetchShopWorkspaceBootstrap()
+      .then((data) => {
+        if (!cancelled) { setShop(data); setShopError(null); }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setShopError(error instanceof Error ? error.message : "The shop could not be loaded.");
+          toast.error(error instanceof Error ? error.message : "The shop could not be loaded.");
+        }
+      })
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrated, shop, shopRetry, workspaceView]);
+
+  useEffect(() => {
+    const navigation = workspaceNavRef.current;
+    if (!navigation) return;
+    const updateEdges = () => {
+      setWorkspaceNavEdges({
+        left: navigation.scrollLeft > 4,
+        right: navigation.scrollLeft + navigation.clientWidth < navigation.scrollWidth - 4,
       });
-  }, [hydrated]);
+    };
+    const handleResize = () => {
+      const activeTab = navigation.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+      if (activeTab) {
+        navigation.scrollLeft = Math.max(0, activeTab.offsetLeft - (navigation.clientWidth - activeTab.offsetWidth) / 2);
+      }
+      window.requestAnimationFrame(updateEdges);
+    };
+    handleResize();
+    navigation.addEventListener("scroll", updateEdges, { passive: true });
+    window.addEventListener("resize", handleResize);
+    const observer = new ResizeObserver(handleResize);
+    observer.observe(navigation);
+    return () => {
+      navigation.removeEventListener("scroll", updateEdges);
+      window.removeEventListener("resize", handleResize);
+      observer.disconnect();
+    };
+  }, [hydrated, session]);
+
+  useEffect(() => {
+    const navigation = workspaceNavRef.current;
+    const activeTab = navigation?.querySelector<HTMLElement>(`#workspace-${workspaceView}-tab`);
+    if (!navigation || !activeTab) return;
+    navigation.scrollTo({
+      left: Math.max(0, activeTab.offsetLeft - (navigation.clientWidth - activeTab.offsetWidth) / 2),
+      behavior: "smooth",
+    });
+  }, [workspaceView]);
+
+  const handleWorkspaceTabKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]:not(:disabled)'));
+    const currentIndex = tabs.indexOf(document.activeElement as HTMLButtonElement);
+    if (currentIndex < 0) return;
+    event.preventDefault();
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? tabs.length - 1
+        : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+    tabs[nextIndex]?.focus();
+    tabs[nextIndex]?.click();
+  };
 
   const salespeople = useMemo(
     () => team.filter((person) => person.active).map((person) => person.normalizedName),
     [team],
   );
-  const canManage = session?.role === "admin";
+  const canManage = session?.roles.includes("admin") ?? false;
+  const canAccessField =
+    session?.roles.some((role) => role === "admin" || role === "salesperson") ??
+    false;
+  const canUseCommerce =
+    session?.roles.some((role) => role === "admin" || role === "operations_staff") ??
+    false;
+  const canUseShop =
+    (session?.roles.includes("retailer") && session.dealerId !== null) ?? false;
   const pincodes = useMemo(
     () => [...new Set(dealers.map((dealer) => dealer.pincode))].sort(),
     [dealers],
@@ -3142,7 +3670,7 @@ export default function Home() {
 
   const mapDealers = useMemo(() => {
     return filterDealerRecords(dealers, {
-      query,
+      query: deferredQuery,
       salespeople: activePeople,
       state: stateFilter,
       quality: "all",
@@ -3154,40 +3682,38 @@ export default function Home() {
     areaFilter,
     dealers,
     pincodeFilter,
-    query,
+    deferredQuery,
     stateFilter,
   ]);
-  const directoryDealers = useMemo(() => {
-    return filterDealerRecords(dealers, {
-      query,
-      salespeople: activePeople,
-      state: stateFilter,
-      quality: canManage ? qualityFilter : "all",
-      pincode: pincodeFilter,
-      area: areaFilter,
-    });
-  }, [
-    activePeople,
-    areaFilter,
-    canManage,
-    dealers,
-    pincodeFilter,
-    qualityFilter,
-    query,
-    stateFilter,
-  ]);
-
+  const mapSidebarFilterKey = dealerFilterKey({ query: deferredQuery, salespeople: activePeople, state: stateFilter, quality: "all", pincode: pincodeFilter, area: areaFilter });
+  const mapSidebarLimit =
+    mapSidebarExpansion.filterKey === mapSidebarFilterKey
+      ? mapSidebarExpansion.limit
+      : 50;
+  const sortedMapDealers = useMemo(() =>
+      [...mapDealers].sort(
+          (a, b) =>
+            a.dealer.localeCompare(b.dealer) ||
+            a.area.localeCompare(b.area) ||
+            a.pincode.localeCompare(b.pincode) ||
+            a.id - b.id,
+        ), [mapDealers]);
+  const mapSidebarDealers = useMemo(() => sortedMapDealers.slice(0, mapSidebarLimit), [sortedMapDealers, mapSidebarLimit]);
   const selectedDealer =
     dealers.find((dealer) => dealer.id === selectedId) ?? null;
   const uniquePins = new Set(dealers.map((dealer) => dealer.pincode)).size;
 
-  const selectDealer = (dealer: Dealer) => {
+  const selectDealer = (dealer: DealerSummary) => {
+    setSelectedActivity(null);
+    setActivityError(null);
     setSelectedId(dealer.id);
     setFocusRequest(dealer);
-    setWorkspaceView("map");
+    showWorkspace("map");
   };
 
   const togglePerson = (person: string) => {
+    setMapSidebarExpansion({ filterKey: "", limit: 50 });
+    setFilterRevision((value) => value + 1);
     setActivePeople((current) =>
       current.includes(person)
         ? current.filter((item) => item !== person)
@@ -3195,8 +3721,8 @@ export default function Home() {
     );
   };
 
-  const showAllPeople = () => setActivePeople(salespeople);
-  const clearAllPeople = () => setActivePeople([]);
+  const showAllPeople = () => { setMapSidebarExpansion({ filterKey: "", limit: 50 }); setFilterRevision((value) => value + 1); setActivePeople(salespeople); };
+  const clearAllPeople = () => { setMapSidebarExpansion({ filterKey: "", limit: 50 }); setFilterRevision((value) => value + 1); setActivePeople([]); };
   const hasPeopleFilter =
     canManage &&
     (activePeople.length !== salespeople.length ||
@@ -3210,6 +3736,8 @@ export default function Home() {
   const directoryActiveFilterCount =
     mapActiveFilterCount + Number(canManage && qualityFilter !== "all");
   const resetMapFilters = () => {
+    setMapSidebarExpansion({ filterKey: "", limit: 50 });
+    setFilterRevision((value) => value + 1);
     setQuery("");
     setActivePeople(salespeople);
     setStateFilter("all");
@@ -3220,23 +3748,40 @@ export default function Home() {
     resetMapFilters();
     setQualityFilter("all");
   };
+  const copyViewLink = async (view: "map" | "dealers") => {
+    const filters: DealerFilters = {
+      query,
+      salespeople: activePeople,
+      state: stateFilter,
+      quality: qualityFilter,
+      pincode: pincodeFilter,
+      area: areaFilter,
+    };
+    try {
+      const url = writeDealerViewUrl(new URL(window.location.href), view, filters, salespeople);
+      await navigator.clipboard.writeText(url.toString());
+      toast.success("View link copied. The recipient still needs access to this workspace.");
+    } catch {
+      toast.error("Could not copy the view link.");
+    }
+  };
   const sharedFilterControls = {
     showSalespersonFilter: canManage,
     query,
-    onQueryChange: setQuery,
+    onQueryChange: (value: string) => { setMapSidebarExpansion({ filterKey: "", limit: 50 }); setFilterRevision((current) => current + 1); setQuery(value); },
     salespeople,
     activePeople,
     onTogglePerson: togglePerson,
     onShowAll: showAllPeople,
     onClearAll: clearAllPeople,
     stateFilter,
-    onStateFilterChange: setStateFilter,
+    onStateFilterChange: (value: StateFilter) => { setMapSidebarExpansion({ filterKey: "", limit: 50 }); setFilterRevision((current) => current + 1); setStateFilter(value); },
     qualityFilter,
-    onQualityFilterChange: setQualityFilter,
+    onQualityFilterChange: (value: QualityFilter) => { setFilterRevision((current) => current + 1); setQualityFilter(value); },
     pincodeFilter,
-    onPincodeFilterChange: setPincodeFilter,
+    onPincodeFilterChange: (value: string) => { setMapSidebarExpansion({ filterKey: "", limit: 50 }); setFilterRevision((current) => current + 1); setPincodeFilter(value); },
     areaFilter,
-    onAreaFilterChange: setAreaFilter,
+    onAreaFilterChange: (value: string) => { setMapSidebarExpansion({ filterKey: "", limit: 50 }); setFilterRevision((current) => current + 1); setAreaFilter(value); },
     pincodes,
     areas,
   };
@@ -3245,12 +3790,14 @@ export default function Home() {
     showQualityFilter: false,
     activeFilterCount: mapActiveFilterCount,
     onResetFilters: resetMapFilters,
+    onCopyView: () => void copyViewLink("map"),
   };
   const dealerFilterControls: DealerFilterControlProps = {
     ...sharedFilterControls,
     showQualityFilter: canManage,
     activeFilterCount: directoryActiveFilterCount,
     onResetFilters: resetDirectoryFilters,
+    onCopyView: () => void copyViewLink("dealers"),
   };
 
   const addDealer = async (dealer: Omit<Dealer, "id">) => {
@@ -3298,6 +3845,12 @@ export default function Home() {
   };
 
   const updateDealer = async (updated: Dealer) => {
+    const pendingDelete = pendingDealerDeletes.current.get(updated.id);
+    if (pendingDelete !== undefined) {
+      window.clearTimeout(pendingDelete);
+      pendingDealerDeletes.current.delete(updated.id);
+      toast.message("Pending deletion cancelled because this dealer is being edited.");
+    }
     try {
       const saved = await saveDealer(updated);
       setDealers((current) =>
@@ -3312,52 +3865,34 @@ export default function Home() {
     }
   };
 
-  const deleteDealer = async (dealerToDelete: Dealer) => {
-    try {
-      await removeDealer(dealerToDelete.id);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Dealer could not be deleted.");
-      return;
-    }
-    const deletedIndex = dealers.findIndex(
-      (dealer) => dealer.id === dealerToDelete.id,
-    );
-    const wasPersonActive = activePeople.includes(dealerToDelete.salesperson);
-    const remainingDealers = dealers.filter(
-      (dealer) => dealer.id !== dealerToDelete.id,
-    );
-    const remainingPeople = new Set(
-      remainingDealers.map((dealer) => dealer.salesperson),
-    );
-    setDealers(remainingDealers);
-    setActivePeople((current) =>
-      current.filter((person) => remainingPeople.has(person)),
-    );
-    if (selectedId === dealerToDelete.id) setSelectedId(null);
-    if (focusRequest?.id === dealerToDelete.id) setFocusRequest(null);
-    toast.success(`${dealerToDelete.dealer} deleted.`, {
+  const deleteDealer = async (dealerToDelete: DealerSummary) => {
+    if (pendingDealerDeletes.current.has(dealerToDelete.id)) return;
+    // Keep the original database identity intact during the undo window. A
+    // delete-and-recreate loses the dealer ID and related route settings.
+    let cancelled = false;
+    const timeout = window.setTimeout(async () => {
+      pendingDealerDeletes.current.delete(dealerToDelete.id);
+      if (cancelled) return;
+      try {
+        await removeDealer(dealerToDelete.id);
+        setDealers((current) => current.filter((dealer) => dealer.id !== dealerToDelete.id));
+        setSelectedId((current) => current === dealerToDelete.id ? null : current);
+        setFocusRequest((current) => current?.id === dealerToDelete.id ? null : current);
+        toast.success(`${dealerToDelete.dealer} deleted.`);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Dealer could not be deleted.");
+      }
+    }, 10_000);
+    pendingDealerDeletes.current.set(dealerToDelete.id, timeout);
+    toast.message(`${dealerToDelete.dealer} will be deleted in 10 seconds.`, {
+      duration: 10_000,
       action: {
         label: "Undo",
-        onClick: async () => {
-          try {
-            const restoredDealer = await createDealer(dealerToDelete);
-            setDealers((current) => {
-              const insertAt = Math.min(Math.max(deletedIndex, 0), current.length);
-              return [
-                ...current.slice(0, insertAt),
-                restoredDealer,
-                ...current.slice(insertAt),
-              ];
-            });
-            if (wasPersonActive) {
-              setActivePeople((current) => [
-                ...new Set([...current, dealerToDelete.salesperson]),
-              ]);
-            }
-            toast.success(`${dealerToDelete.dealer} restored.`);
-          } catch (error) {
-            toast.error(error instanceof Error ? error.message : "Dealer could not be restored.");
-          }
+        onClick: () => {
+          cancelled = true;
+          window.clearTimeout(timeout);
+          pendingDealerDeletes.current.delete(dealerToDelete.id);
+          toast.success(`${dealerToDelete.dealer} kept.`);
         },
       },
     });
@@ -3383,7 +3918,7 @@ export default function Home() {
               salesperson: { type: "string" },
               state: {
                 type: "string",
-                enum: ["Telangana", "Andhra Pradesh"],
+                enum: [...INDIAN_STATES],
               },
             },
             additionalProperties: false,
@@ -3429,7 +3964,7 @@ export default function Home() {
               address: { type: "string" },
               state: {
                 type: "string",
-                enum: ["Telangana", "Andhra Pradesh"],
+                enum: [...INDIAN_STATES],
               },
             },
             required: ["salesperson", "dealer", "pincode", "area", "state"],
@@ -3485,7 +4020,8 @@ export default function Home() {
               salesperson: candidate.salesperson.trim().toUpperCase(),
               dealer: candidate.dealer.trim().toUpperCase(),
               pincode: candidate.pincode,
-              area: candidate.area.trim().toUpperCase(),
+              area: canonicalizeAreaName(candidate.area),
+              sourceArea: candidate.area.trim(),
               address: candidate.address?.trim() || undefined,
               state: candidate.state,
               longitude: location.coordinates[0],
@@ -3515,55 +4051,101 @@ export default function Home() {
     return () => lifecycle.abort();
   }, [canManage, dealers]);
 
+  if (hydrated && bootstrapError) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-[#f7f3ea] px-6">
+        <div role="alert" className="max-w-md rounded-2xl border bg-white p-6 text-center">
+          <p className="font-semibold">Workspace could not load</p>
+          <p className="mt-2 text-sm text-[#6f6a65]">{bootstrapError}</p>
+          <Button className="mt-4" onClick={() => {
+            invalidateWorkspaceBootstraps();
+            setBootstrapError(null);
+            setBootstrapRetry((value) => value + 1);
+          }}>Retry</Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <main className="h-[100svh] overflow-hidden bg-[#eef0ed] text-[#18221f]">
-      <header className="flex h-16 items-center justify-between border-b border-white/10 bg-[#173a34] px-3 text-white sm:px-6 lg:h-[72px]">
+    <main className="h-[100svh] overflow-hidden bg-[#f7f3ea] text-[#252a30]">
+      <header className="flex h-16 items-center justify-between border-b border-white/10 bg-[#252a44] px-3 text-white sm:px-6 lg:h-[72px]">
         <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#d9f36b] text-[#173a34] shadow-inner sm:h-10 sm:w-10">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#b65a38] text-white shadow-inner sm:h-10 sm:w-10">
             <MapPinned className="h-5 w-5" aria-hidden="true" />
           </span>
           <div className="min-w-0">
             <h1 className="truncate text-[15px] font-semibold tracking-[-0.01em] sm:text-lg">
-              Dealer Territory Map
+              Dealer Operations
             </h1>
             <p className="truncate text-[11px] text-white/62 sm:text-xs">
-              Telangana + Andhra Pradesh
+              {canAccessField
+                ? "India"
+                : canUseShop
+                  ? session?.dealer ?? "Retail ordering"
+                  : "Catalog, orders, and access"}
             </p>
           </div>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-3 sm:gap-6">
-          <div className="hidden items-center gap-6 text-sm xl:flex">
+          {canAccessField ? <div className="hidden items-center gap-6 text-sm xl:flex">
+            {canManage ? (
+              <div>
+                <span className="block text-[11px] uppercase tracking-[0.08em] text-white/70">
+                  Salespeople
+                </span>
+                <span className="font-semibold">{salespeople.length}</span>
+              </div>
+            ) : null}
             <div>
-              <span className="block text-[11px] uppercase tracking-[0.08em] text-white/45">
-                Salespeople
-              </span>
-              <span className="font-semibold">{salespeople.length}</span>
-            </div>
-            <div>
-              <span className="block text-[11px] uppercase tracking-[0.08em] text-white/45">
-                Dealers
+              <span className="block text-[11px] uppercase tracking-[0.08em] text-white/70">
+                {canManage ? "Dealers" : "My dealers"}
               </span>
               <span className="font-semibold">{dealers.length}</span>
             </div>
             <div>
-              <span className="block text-[11px] uppercase tracking-[0.08em] text-white/45">
+              <span className="block text-[11px] uppercase tracking-[0.08em] text-white/70">
                 PIN codes
               </span>
               <span className="font-semibold">{uniquePins}</span>
             </div>
-          </div>
+          </div> : null}
           {session ? (
-            <div className="hidden text-right sm:block">
-              <span className="block text-xs font-semibold">{session.displayName}</span>
-              <span className="block text-[10px] capitalize text-white/55">{session.role}</span>
+            <div className="min-w-0 text-right leading-tight">
+              <span className="block max-w-24 truncate text-xs font-semibold sm:hidden">
+                @{session.username}
+              </span>
+              <span className="hidden max-w-40 truncate text-xs font-semibold sm:block">
+                {session.displayName}
+              </span>
+              <span className="block text-[11px] capitalize text-white/70">
+                {session.role.replace("_", " ")}
+              </span>
             </div>
           ) : null}
           <button
             type="button"
-            className="grid h-10 w-10 place-items-center rounded-xl text-white/70 transition-[background-color,color,transform] hover:bg-white/10 hover:text-white active:scale-[0.96]"
+            className="grid h-11 w-11 place-items-center rounded-xl text-white/70 transition-[background-color,color,transform] hover:bg-white/10 hover:text-white active:scale-[0.96]"
             aria-label="Sign out"
             title="Sign out"
             onClick={async () => {
+              if ("indexedDB" in window && session?.userId) {
+                try {
+                  const { pendingVisits, clearPendingVisits } = await import("@/lib/offline-visits");
+                  const pending = await pendingVisits(session.userId);
+                  if (pending.length && !window.confirm(`${pending.length} visit updates have not synced. Sign out and discard them?`)) return;
+                  await clearPendingVisits();
+                } catch {
+                  toast.error("Could not clear this device’s pending visit updates. Try again.");
+                  return;
+                }
+              }
+              for (const timeout of pendingDealerDeletes.current.values()) window.clearTimeout(timeout);
+              pendingDealerDeletes.current.clear();
+              if (session?.userId) {
+                try { sessionStorage.removeItem(`dealer-ops-order-retry:${session.userId}`); } catch {}
+              }
+              invalidateWorkspaceBootstraps();
               await authClient.signOut();
               router.replace("/auth/sign-in");
               router.refresh();
@@ -3574,86 +4156,150 @@ export default function Home() {
         </div>
       </header>
 
+      <div className="relative overflow-hidden border-b border-[#ded7cc] bg-white">
       <nav
-        className={`grid h-14 gap-1.5 border-b border-[#d9dedb] bg-white p-1.5 lg:flex lg:h-12 lg:items-center lg:justify-center lg:gap-1 lg:px-6 lg:py-1.5 ${canManage ? "grid-cols-4" : "grid-cols-3"}`}
+        ref={workspaceNavRef}
+        role="tablist"
+        onKeyDown={handleWorkspaceTabKeyDown}
+        className="flex h-14 scroll-px-10 items-center gap-1.5 overflow-x-auto p-1.5 pr-11 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:h-12 lg:justify-center lg:gap-1 lg:px-6 lg:py-1.5"
         aria-label="Workspace view"
       >
-        <button
-          type="button"
-          aria-pressed={workspaceView === "map"}
-          aria-controls="map-workspace"
-          onClick={() => setWorkspaceView("map")}
-          className={
-            "flex min-h-11 items-center justify-center gap-2 rounded-xl text-sm font-semibold transition-[transform,background-color,color,box-shadow] active:scale-[0.98] lg:h-9 lg:min-h-0 lg:w-36 lg:rounded-lg " +
-            (workspaceView === "map"
-              ? "bg-[#173a34] text-white shadow-sm"
-              : "text-[#65716d]")
-          }
-        >
-          <MapIcon className="h-4 w-4" aria-hidden="true" />
-          Map
-        </button>
-        <button
-          type="button"
-          aria-pressed={workspaceView === "dealers"}
-          aria-controls="dealer-directory-panel"
-          onClick={() => setWorkspaceView("dealers")}
-          className={
-            "flex min-h-11 items-center justify-center gap-2 rounded-xl text-sm font-semibold transition-[transform,background-color,color,box-shadow] active:scale-[0.98] lg:h-9 lg:min-h-0 lg:w-36 lg:rounded-lg " +
-            (workspaceView === "dealers"
-              ? "bg-[#173a34] text-white shadow-sm"
-              : "text-[#65716d]")
-          }
-        >
-          <List className="h-4 w-4" aria-hidden="true" />
-          Dealers
-          <span
+        {canAccessField ? <>
+          <button
+            id="workspace-map-tab"
+            role="tab"
+            type="button"
+            tabIndex={workspaceView === "map" ? 0 : -1}
+            aria-selected={workspaceView === "map"}
+            aria-controls="map-workspace"
+            onClick={() => showWorkspace("map")}
             className={
-              "rounded-full px-1.5 py-0.5 text-[10px] tabular-nums " +
-              (workspaceView === "dealers"
-                ? "bg-white/14 text-white"
-                : "bg-[#e7ece9] text-[#53605b]")
+              "flex min-h-11 min-w-24 flex-1 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold transition-[transform,background-color,color,box-shadow] active:scale-[0.98] lg:h-9 lg:min-h-0 lg:w-32 lg:flex-none lg:rounded-lg " +
+              (workspaceView === "map"
+                ? "bg-[#b65a38] text-white shadow-sm"
+                : "text-[#6f6a65]")
             }
           >
-            {dealers.length}
-          </span>
-        </button>
-        <button
-          type="button"
-          aria-pressed={workspaceView === "routes"}
-          aria-controls="routes-workspace-panel"
-          onClick={() => setWorkspaceView("routes")}
-          className={
-            "flex min-h-11 items-center justify-center gap-2 rounded-xl text-sm font-semibold transition-[transform,background-color,color,box-shadow] active:scale-[0.98] lg:h-9 lg:min-h-0 lg:w-36 lg:rounded-lg " +
-            (workspaceView === "routes"
-              ? "bg-[#173a34] text-white shadow-sm"
-              : "text-[#65716d]")
-          }
-        >
-          <RouteIcon className="h-4 w-4" aria-hidden="true" />
-          {canManage ? "Activity" : "Routes"}
-        </button>
-        {canManage ? (
+            <MapIcon className="h-4 w-4" aria-hidden="true" />
+            Map
+          </button>
           <button
+            id="workspace-dealers-tab"
+            role="tab"
             type="button"
-            aria-pressed={workspaceView === "team"}
-            aria-controls="team-workspace-panel"
-            onClick={() => setWorkspaceView("team")}
+            tabIndex={workspaceView === "dealers" ? 0 : -1}
+            aria-selected={workspaceView === "dealers"}
+            aria-controls="dealer-directory-panel"
+            onClick={() => showWorkspace("dealers")}
             className={
-              "flex min-h-11 items-center justify-center gap-2 rounded-xl text-sm font-semibold transition-[transform,background-color,color,box-shadow] active:scale-[0.98] lg:h-9 lg:min-h-0 lg:w-36 lg:rounded-lg " +
+              "flex min-h-11 min-w-24 flex-1 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold transition-[transform,background-color,color,box-shadow] active:scale-[0.98] lg:h-9 lg:min-h-0 lg:w-32 lg:flex-none lg:rounded-lg " +
+              (workspaceView === "dealers"
+                ? "bg-[#b65a38] text-white shadow-sm"
+                : "text-[#6f6a65]")
+            }
+          >
+            <List className="h-4 w-4" aria-hidden="true" />
+            Dealers
+          </button>
+          <button
+            id="workspace-routes-tab"
+            role="tab"
+            type="button"
+            tabIndex={workspaceView === "routes" ? 0 : -1}
+            aria-selected={workspaceView === "routes"}
+            aria-controls="routes-workspace-panel"
+            onClick={() => showWorkspace("routes")}
+            className={
+              "flex min-h-11 min-w-24 flex-1 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold transition-[transform,background-color,color,box-shadow] active:scale-[0.98] lg:h-9 lg:min-h-0 lg:w-32 lg:flex-none lg:rounded-lg " +
+              (workspaceView === "routes"
+                ? "bg-[#b65a38] text-white shadow-sm"
+                : "text-[#6f6a65]")
+            }
+          >
+            <RouteIcon className="h-4 w-4" aria-hidden="true" />
+            {canManage ? "Activity" : "Routes"}
+          </button>
+        </> : null}
+        {canManage && canAccessField ? (
+          <button
+            id="workspace-team-tab"
+            role="tab"
+            type="button"
+            tabIndex={workspaceView === "team" ? 0 : -1}
+            aria-selected={workspaceView === "team"}
+            aria-controls="team-workspace-panel"
+            onClick={() => showWorkspace("team")}
+            className={
+              "flex min-h-11 min-w-24 flex-1 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold transition-[transform,background-color,color,box-shadow] active:scale-[0.98] lg:h-9 lg:min-h-0 lg:w-32 lg:flex-none lg:rounded-lg " +
               (workspaceView === "team"
-                ? "bg-[#173a34] text-white shadow-sm"
-                : "text-[#65716d]")
+                ? "bg-[#b65a38] text-white shadow-sm"
+                : "text-[#6f6a65]")
             }
           >
             <UserCog className="h-4 w-4" aria-hidden="true" />
             Team
           </button>
         ) : null}
+        {canUseCommerce ? (
+          <button
+            id="workspace-commerce-tab"
+            role="tab"
+            type="button"
+            tabIndex={workspaceView === "commerce" ? 0 : -1}
+            aria-selected={workspaceView === "commerce"}
+            aria-controls="commerce-workspace-panel"
+            onClick={() => showWorkspace("commerce")}
+            className={
+              "flex min-h-11 min-w-28 flex-1 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold transition-[transform,background-color,color,box-shadow] active:scale-[0.98] lg:h-9 lg:min-h-0 lg:w-32 lg:flex-none lg:rounded-lg " +
+              (workspaceView === "commerce"
+                ? "bg-[#b65a38] text-white shadow-sm"
+                : "text-[#6f6a65]")
+            }
+          >
+            <ShoppingBag className="h-4 w-4" aria-hidden="true" />
+            Commerce
+          </button>
+        ) : null}
+        {canUseShop ? (
+          <button
+            id="workspace-shop-tab"
+            role="tab"
+            type="button"
+            tabIndex={workspaceView === "shop" ? 0 : -1}
+            aria-selected={workspaceView === "shop"}
+            aria-controls="shop-workspace-panel"
+            onClick={() => showWorkspace("shop")}
+            className={
+              "flex min-h-11 min-w-24 flex-1 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold transition-[transform,background-color,color,box-shadow] active:scale-[0.98] lg:h-9 lg:min-h-0 lg:w-32 lg:flex-none lg:rounded-lg " +
+              (workspaceView === "shop"
+                ? "bg-[#b65a38] text-white shadow-sm"
+                : "text-[#6f6a65]")
+            }
+          >
+            <Store className="h-4 w-4" aria-hidden="true" />
+            Shop
+          </button>
+        ) : null}
       </nav>
+      {workspaceNavEdges.left ? (
+        <button type="button" aria-label="Show previous workspace views" onClick={() => workspaceNavRef.current?.scrollBy({ left: -180, behavior: "smooth" })} className="absolute left-1 top-1/2 hidden h-9 w-9 -translate-y-1/2 place-items-center rounded-full border border-[#ded7cc] bg-white text-[#34333a] shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#356a9a] max-lg:grid">
+          <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+        </button>
+      ) : null}
+      {workspaceNavEdges.right ? (
+        <button type="button" aria-label="Show more workspace views" onClick={() => workspaceNavRef.current?.scrollBy({ left: 180, behavior: "smooth" })} className="absolute right-1 top-1/2 hidden h-9 w-9 -translate-y-1/2 place-items-center rounded-full border border-[#ded7cc] bg-white text-[#34333a] shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#356a9a] max-lg:grid">
+          <ChevronRight className="h-4 w-4" aria-hidden="true" />
+        </button>
+      ) : null}
+      </div>
 
-      <div
+      {!hydrated ? <WorkspaceLoading label="Loading your workspace…" /> : null}
+
+      {hydrated && canAccessField && openedWorkspaceViews.includes("map") ? <div
         id="map-workspace"
+        role="tabpanel"
+        aria-labelledby="workspace-map-tab"
+        aria-hidden={workspaceView !== "map"}
         className={
           "h-[calc(100svh-120px)] min-h-0 grid-rows-[minmax(0,1fr)] grid-cols-1 overflow-hidden lg:grid-cols-[330px_minmax(0,1fr)] " +
           (workspaceView === "map" ? "grid" : "hidden")
@@ -3661,10 +4307,10 @@ export default function Home() {
       >
         <aside
           id="map-dealer-sidebar"
-          className="z-10 hidden h-full flex-col border-r border-[#d9dedb] bg-[#f7f8f6] lg:flex"
+          className="z-10 hidden h-full flex-col border-r border-[#ded7cc] bg-[#fffcf7] lg:flex"
         >
-          <div className="border-b border-[#dde2df] p-3 sm:p-4">
-            <div className="mb-3 flex items-center justify-between text-xs font-semibold text-[#65716d]">
+          <div className="border-b border-[#e3dcd2] p-3 sm:p-4">
+            <div className="mb-3 flex items-center justify-between text-xs font-semibold text-[#6f6a65]">
               <span>Filters</span>
               <span>{mapDealers.length} visible</span>
             </div>
@@ -3677,15 +4323,15 @@ export default function Home() {
           <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
             {mapDealers.length ? (
               <ul className="space-y-1">
-                {mapDealers.map((dealer) => (
+                {mapSidebarDealers.map((dealer) => (
                   <li key={dealer.id}>
                     <button
                       onClick={() => selectDealer(dealer)}
                       className={
                         "group flex min-h-14 w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-[transform,background-color] active:scale-[0.99] " +
                         (selectedId === dealer.id
-                          ? "bg-[#e7ece9]"
-                          : "hover:bg-[#eef1ef]")
+                          ? "bg-[#f4e5de]"
+                          : "hover:bg-[#f4efe8]")
                       }
                     >
                       <span
@@ -3699,28 +4345,50 @@ export default function Home() {
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-1.5">
-                          <span className="truncate text-sm font-semibold text-[#26312e]">
+                          <span className="truncate text-sm font-semibold text-[#252a30]">
                             {dealer.dealer}
                           </span>
                           {dealer.reviewNote ? (
                             <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
                           ) : null}
                         </span>
-                        <span className="mt-0.5 block truncate text-xs text-[#76817d]">
+                        <span className="mt-0.5 block truncate text-xs text-[#6f6a65]">
                           {dealer.area} · {dealer.pincode}
+                          {canManage ? ` · ${dealer.salesperson}` : ""}
                         </span>
                       </span>
-                      <ChevronRight className="h-4 w-4 text-[#9ba39f] transition group-hover:translate-x-0.5" />
+                      <ChevronRight className="h-4 w-4 text-[#aaa29a] transition group-hover:translate-x-0.5" />
                     </button>
                   </li>
                 ))}
+                {mapDealers.length > mapSidebarDealers.length ? (
+                  <li className="px-3 py-3 text-center">
+                    <p className="mb-2 text-xs text-[#6f6a65]">
+                      Showing {mapSidebarDealers.length} of {mapDealers.length} alphabetically
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="w-full border-[#d6cfc4] bg-white"
+                      onClick={() =>
+                        setMapSidebarExpansion({
+                          filterKey: mapSidebarFilterKey,
+                          limit: mapSidebarLimit + 50,
+                        })
+                      }
+                    >
+                      Show {Math.min(50, mapDealers.length - mapSidebarDealers.length)} more
+                    </Button>
+                  </li>
+                ) : null}
               </ul>
             ) : (
               <div className="grid h-48 place-items-center px-6 text-center">
                 <div>
-                  <CircleDot className="mx-auto mb-2 h-6 w-6 text-[#9ba39f]" />
+                  <CircleDot className="mx-auto mb-2 h-6 w-6 text-[#aaa29a]" />
                   <p className="text-sm font-semibold">No dealers match</p>
-                  <p className="mt-1 text-xs text-[#76817d]">
+                  <p className="mt-1 text-xs text-[#6f6a65]">
                     Change the search or adjust the filters.
                   </p>
                 </div>
@@ -3736,6 +4404,7 @@ export default function Home() {
         >
           <TerritoryMap
             dealers={mapDealers}
+            active={workspaceView === "map"}
             selectedId={selectedId}
             onSelect={(id) => {
               const dealer = dealers.find((item) => item.id === id);
@@ -3746,19 +4415,19 @@ export default function Home() {
           <MobileMapFilters filters={mapFilterControls} />
 
           {selectedDealer ? (
-            <article className="absolute bottom-3 left-3 right-3 max-h-[48%] overflow-y-auto rounded-2xl border border-white/70 bg-white/95 p-4 shadow-[0_18px_44px_rgba(23,58,52,0.18)] backdrop-blur sm:bottom-auto sm:left-auto sm:right-4 sm:top-4 sm:w-[min(360px,calc(100%-32px))] sm:max-h-none sm:overflow-visible sm:p-5">
+            <article className="absolute bottom-3 left-3 right-3 max-h-[48%] overflow-y-auto rounded-2xl border border-white/70 bg-white/95 p-4 shadow-[0_18px_44px_rgba(37,42,68,0.18)] backdrop-blur sm:bottom-auto sm:left-auto sm:right-4 sm:top-4 sm:w-[min(360px,calc(100%-32px))] sm:max-h-none sm:overflow-visible sm:p-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-[11px] font-bold uppercase tracking-[0.09em] text-[#76817d]">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.09em] text-[#6f6a65]">
                     Dealer
                   </p>
-                  <h2 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-[#1d2925]">
+                  <h2 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-[#252a30]">
                     {selectedDealer.dealer}
                   </h2>
                 </div>
                 <button
                   onClick={() => setSelectedId(null)}
-                  className="rounded-lg p-1.5 text-[#77817e] hover:bg-[#eef1ef]"
+                  className="grid h-11 w-11 place-items-center rounded-xl text-[#6f6a65] transition-[transform,background-color] hover:bg-[#f4efe8] active:scale-[0.97]"
                   aria-label="Close dealer details"
                 >
                   <X className="h-4 w-4" />
@@ -3766,39 +4435,41 @@ export default function Home() {
               </div>
 
               <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3">
+                {canManage ? (
+                  <div>
+                    <dt className="text-[11px] text-[#6f6a65]">Salesperson</dt>
+                    <dd className="mt-0.5 flex items-center gap-2 text-sm font-semibold">
+                      <span
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{
+                          backgroundColor:
+                            getSalespersonColor(selectedDealer.salesperson),
+                        }}
+                      />
+                      {selectedDealer.salesperson}
+                    </dd>
+                  </div>
+                ) : null}
                 <div>
-                  <dt className="text-[11px] text-[#7a8581]">Salesperson</dt>
-                  <dd className="mt-0.5 flex items-center gap-2 text-sm font-semibold">
-                    <span
-                      className="h-2.5 w-2.5 rounded-full"
-                      style={{
-                        backgroundColor:
-                          getSalespersonColor(selectedDealer.salesperson),
-                      }}
-                    />
-                    {selectedDealer.salesperson}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-[11px] text-[#7a8581]">PIN code</dt>
+                  <dt className="text-[11px] text-[#6f6a65]">PIN code</dt>
                   <dd className="mt-0.5 text-sm font-semibold">
                     {selectedDealer.pincode}
                   </dd>
                 </div>
                 <div className="col-span-2">
-                  <dt className="text-[11px] text-[#7a8581]">Area</dt>
+                  <dt className="text-[11px] text-[#6f6a65]">Area</dt>
                   <dd className="mt-0.5 text-sm font-semibold">
                     {selectedDealer.area}, {selectedDealer.state}
                   </dd>
                 </div>
                 <div className="col-span-2">
-                  <dt className="text-[11px] text-[#7a8581]">Full address</dt>
+                  <dt className="text-[11px] text-[#6f6a65]">Full address</dt>
                   <dd className="mt-0.5 text-sm font-semibold leading-5">
                     {selectedDealer.address ?? "Not added"}
                   </dd>
                 </div>
                 <div className="col-span-2">
-                  <dt className="text-[11px] text-[#7a8581]">Pin location</dt>
+                  <dt className="text-[11px] text-[#6f6a65]">Pin location</dt>
                   <dd className="mt-0.5 text-sm font-semibold">
                     {(selectedDealer.locationPrecision ??
                       (selectedDealer.address ? "address" : "pincode")) ===
@@ -3809,6 +4480,18 @@ export default function Home() {
                 </div>
               </dl>
 
+              <div className="mt-4 border-t border-[#e9e2d8] pt-4" aria-live="polite">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f6a65]">Visit history</p>
+                {selectedActivity?.dealerId === selectedDealer.id ? (
+                  <p className="mt-2 text-sm leading-6">
+                    {selectedActivity.completedVisits} completed visits · Last visit {selectedActivity.lastCompletedAt ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeZone: "Asia/Kolkata" }).format(new Date(selectedActivity.lastCompletedAt)) : "not recorded"}
+                    <br />Next due {selectedActivity.nextDueAt ?? "not scheduled"} · Every {selectedActivity.frequencyDays} days
+                  </p>
+                ) : activityError === selectedDealer.id ? (
+                  <Button variant="link" className="mt-1 h-11 px-0" onClick={() => { setActivityError(null); setActivityRetry((value) => value + 1); }}>Visit history unavailable · Retry</Button>
+                ) : <p className="mt-2 text-sm text-[#6f6a65]">Loading visit history…</p>}
+              </div>
+
               {selectedDealer.reviewNote ? (
                 <div className="mt-4 flex gap-2.5 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -3818,32 +4501,40 @@ export default function Home() {
             </article>
           ) : null}
 
-          <div className="absolute left-4 top-4 hidden items-center gap-2 rounded-xl border border-white/70 bg-white/92 px-3 py-2 text-xs font-semibold text-[#47534f] shadow-sm backdrop-blur sm:flex">
-            <Users className="h-4 w-4 text-[#173a34]" />
-            Monthly dealer coverage
+          <div className="absolute left-4 top-4 hidden items-center gap-2 rounded-xl border border-white/70 bg-white/92 px-3 py-2 text-xs font-semibold text-[#5f5b57] shadow-sm backdrop-blur sm:flex">
+            <Users className="h-4 w-4 text-[#252a44]" />
+            {canManage ? "Team dealer coverage" : "My dealer coverage"}
           </div>
         </section>
-      </div>
-      <DealerDirectory
+      </div> : null}
+      {hydrated && canAccessField && openedWorkspaceViews.includes("dealers") ? <DealerDirectory
         active={workspaceView === "dealers"}
-        dealers={directoryDealers}
+        allDealers={dealers}
         filters={dealerFilterControls}
         onSelect={selectDealer}
         onUpdate={updateDealer}
         onDelete={deleteDealer}
         onAdd={addDealer}
         onImport={importDealers}
+        onReviewResolved={(dealer) => {
+          setDealers((current) => [...current, dealer]);
+          setActivePeople((current) => [...new Set([...current, dealer.salesperson])]);
+        }}
+        pendingReviewCount={pendingDealerReviewCount}
+        filterRevision={filterRevision}
         canManage={canManage}
-      />
-      {hydrated ? (
+      /> : null}
+      {hydrated && canAccessField && openedWorkspaceViews.includes("routes") ? (
         <RoutesWorkspace
           active={workspaceView === "routes"}
           dealers={dealers}
           currentSalesperson={session?.salesperson ?? null}
+          userId={session?.userId ?? ""}
           readOnly={canManage}
+          salespeople={team}
         />
       ) : null}
-      {canManage ? (
+      {hydrated && canManage && openedWorkspaceViews.includes("team") ? (
         <TeamWorkspace
           active={workspaceView === "team"}
           salespeople={team}
@@ -3851,6 +4542,14 @@ export default function Home() {
           onAccountUpdated={(person) => {
             setTeam((current) =>
               current.map((item) => (item.id === person.id ? person : item)),
+            );
+          }}
+          onAccountDeleted={(person, accounts) => {
+            setTeam((current) =>
+              current.map((item) => (item.id === person.id ? person : item)),
+            );
+            setCommerce((current) =>
+              current ? { ...current, accounts } : current,
             );
           }}
           onDealersAssigned={(nextDealers) => {
@@ -3873,6 +4572,68 @@ export default function Home() {
             ]);
           }}
         />
+      ) : null}
+      {canUseCommerce && openedWorkspaceViews.includes("commerce") ? (
+        <section
+          id="commerce-workspace-panel"
+          role="tabpanel"
+          hidden={workspaceView !== "commerce"}
+          aria-labelledby="workspace-commerce-tab"
+          className="h-[calc(100svh-120px)] overflow-y-auto bg-[#f7f3ea]"
+        >
+          {commerce ? (
+            <CommerceWorkspace
+              products={commerce.products}
+              categories={commerce.categories}
+              initialOrders={commerce.orders}
+              stats={commerce.stats}
+              initialAccounts={commerce.accounts}
+              dealerOptions={dealers.map((dealer) => ({
+                id: dealer.id,
+                name: dealer.dealer,
+                pincode: dealer.pincode,
+              }))}
+              isAdmin={canManage}
+              active={workspaceView === "commerce"}
+              onAccountsChange={(accounts) =>
+                setCommerce((current) =>
+                  current ? { ...current, accounts } : current,
+                )
+              }
+            />
+          ) : commerceError ? (
+            <div role="alert" className="p-6 text-sm">
+              <p>{commerceError}</p>
+              <Button className="mt-3" onClick={() => {
+                invalidateWorkspaceBootstraps();
+                setCommerceError(null);
+                setCommerceRetry((value) => value + 1);
+              }}>Retry commerce</Button>
+            </div>
+          ) : <WorkspaceLoading label="Loading commerce operations…" />}
+        </section>
+      ) : null}
+      {canUseShop && openedWorkspaceViews.includes("shop") ? (
+        <section
+          id="shop-workspace-panel"
+          role="tabpanel"
+          hidden={workspaceView !== "shop"}
+          aria-labelledby="workspace-shop-tab"
+          className="h-[calc(100svh-120px)] overflow-y-auto bg-[#f7f3ea]"
+        >
+          {shop ? (
+            <ShopWorkspace products={shop.products} initialOrders={shop.orders} userId={session?.userId ?? ""} />
+          ) : shopError ? (
+            <div role="alert" className="p-6 text-sm">
+              <p>{shopError}</p>
+              <Button className="mt-3" onClick={() => {
+                invalidateWorkspaceBootstraps();
+                setShopError(null);
+                setShopRetry((value) => value + 1);
+              }}>Retry shop</Button>
+            </div>
+          ) : <WorkspaceLoading label="Loading your shop…" />}
+        </section>
       ) : null}
       <Toaster position="top-center" richColors />
     </main>

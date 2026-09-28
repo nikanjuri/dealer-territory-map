@@ -21,38 +21,38 @@
 
 :root {
   color-scheme: light;
-  --background: #eef0ed;
-  --foreground: #18221f;
+  --background: #f7f3ea;
+  --foreground: #252a30;
   --card: #ffffff;
-  --card-foreground: #18221f;
+  --card-foreground: #252a30;
   --popover: #ffffff;
-  --popover-foreground: #171717;
-  --primary: #173a34;
+  --popover-foreground: #252a30;
+  --primary: #b65a38;
   --primary-foreground: #ffffff;
-  --secondary: #e7ece9;
-  --secondary-foreground: #25312d;
-  --muted: #eef1ef;
-  --muted-foreground: #6e7874;
-  --accent: #d9f36b;
-  --accent-foreground: #173a34;
+  --secondary: #f4e5de;
+  --secondary-foreground: #34333a;
+  --muted: #f4efe8;
+  --muted-foreground: #6f6a65;
+  --accent: #f4e5de;
+  --accent-foreground: #8f452f;
   --destructive: #e7000b;
-  --border: #d9dedb;
-  --input: #d7dcda;
-  --ring: #2f6fe4;
+  --border: #ded7cc;
+  --input: #d6cfc4;
+  --ring: #356a9a;
   --chart-1: #df4e3f;
   --chart-2: #2f6fe4;
   --chart-3: #c48a12;
-  --chart-4: #173a34;
+  --chart-4: #252a44;
   --chart-5: #8b5cf6;
   --radius: 0.75rem;
-  --sidebar: #f7f8f6;
-  --sidebar-foreground: #18221f;
-  --sidebar-primary: #173a34;
+  --sidebar: #fffcf7;
+  --sidebar-foreground: #252a30;
+  --sidebar-primary: #b65a38;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #e7ece9;
-  --sidebar-accent-foreground: #25312d;
-  --sidebar-border: #d9dedb;
-  --sidebar-ring: #2f6fe4;
+  --sidebar-accent: #f4e5de;
+  --sidebar-accent-foreground: #34333a;
+  --sidebar-border: #ded7cc;
+  --sidebar-ring: #356a9a;
 }
 
 @theme inline {
@@ -105,12 +105,28 @@ body {
   margin: 0;
 }
 
+[role="tab"]:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 @media (prefers-color-scheme: dark) {
   [data-slot="input"],
   [data-slot="select-trigger"] {
-    border-color: #cfd6d2;
-    background: #fbfcfb;
-    color: #18221f;
+    border-color: #d6cfc4;
+    background: #fffcf7;
+    color: #252a30;
   }
 }
 
@@ -122,11 +138,11 @@ body {
   overflow: hidden;
   border: 1px solid rgb(255 255 255 / 72%);
   border-radius: 12px;
-  box-shadow: 0 8px 20px rgb(23 58 52 / 12%);
+  box-shadow: 0 8px 20px rgb(37 42 68 / 12%);
 }
 
 .maplibregl-ctrl-attrib {
-  color: #56615d;
+  color: #5f5b57;
   font-size: 10px;
 }
 

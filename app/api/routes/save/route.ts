@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { canOperateOwnRoutes } from "@/lib/access-contract";
 import { getAppSession } from "@/lib/authorization";
 import { routePreviewSaveSchema } from "@/lib/route-contract";
@@ -8,6 +9,7 @@ import {
 import { buildRouteSchedule, formatRouteDuration } from "@/lib/route-schedule";
 import {
   getDealersForRoute,
+  findSavedRouteByPreviewKey,
   listRouteWorkspaceData,
   saveRoutePlan,
 } from "@/lib/route-records";
@@ -31,10 +33,15 @@ export async function POST(request: Request) {
     return Response.json({ error: "Invalid route preview." }, { status: 400 });
   }
 
+  const previewKey = createHash("sha256").update(parsed.data.token).digest("hex");
   let preview;
   try {
     preview = readRoutePreviewToken(parsed.data.token, routePreviewSecret());
   } catch (error) {
+    // A response may be lost after a successful save. Recover the existing
+    // account-owned plan even if the short-lived preview has since expired.
+    const savedPlan = await findSavedRouteByPreviewKey(previewKey, session.userId, session.salespersonId!);
+    if (savedPlan) return Response.json({ plan: savedPlan }, { status: 200 });
     return Response.json(
       { error: error instanceof Error ? error.message : "Invalid route preview." },
       { status: 400 },
@@ -87,6 +94,7 @@ export async function POST(request: Request) {
     provider: preview.provider,
     warning: preview.warning,
     createdBy: session.userId,
+    previewKey,
     dealersForRoute: routeDealers,
     encodedPolyline: preview.encodedPolyline,
   });

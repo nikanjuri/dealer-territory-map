@@ -95,6 +95,7 @@ test("turns an exact-address plan into a scheduled, mobile-safe route", () => {
       status: "planned" as const,
     })),
     createdAt: "2026-09-19T00:00:00.000Z",
+    updatedAt: "2026-09-19T00:00:00.000Z",
   };
   const segments = buildGoogleMapsRouteSegments(
     savedPlan,

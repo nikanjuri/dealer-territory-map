@@ -1,4 +1,5 @@
 import type { Dealer } from "../app/dealers";
+import type { DealerSummary } from "./dealer-summary";
 
 export type StateFilter = "all" | Dealer["state"];
 export type QualityFilter = "all" | "verified" | "review" | "unchecked";
@@ -12,14 +13,14 @@ export type DealerFilters = {
   area: string;
 };
 
-export function dealerQualityBucket(dealer: Dealer): Exclude<QualityFilter, "all"> {
+export function dealerQualityBucket(dealer: DealerSummary): Exclude<QualityFilter, "all"> {
   const status = dealer.validationStatus ?? (dealer.reviewNote ? "review" : "unchecked");
   if (status === "verified") return "verified";
   if (status === "review" || status === "invalid") return "review";
   return "unchecked";
 }
 
-export function filterDealerRecords(dealers: Dealer[], filters: DealerFilters) {
+export function filterDealerRecords<T extends DealerSummary>(dealers: T[], filters: DealerFilters): T[] {
   const normalized = filters.query.trim().toLowerCase();
   return dealers.filter((dealer) => {
     if (!filters.salespeople.includes(dealer.salesperson)) return false;

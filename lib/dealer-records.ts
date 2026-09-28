@@ -1,14 +1,16 @@
 import "server-only";
 
-import { eq } from "drizzle-orm";
+import { and, asc, count, eq, inArray, max, sql, type SQL } from "drizzle-orm";
 import { getDb } from "@/db";
-import { dealers, salespeople } from "@/db/schema";
+import { dealers, salespeople, visitRules, visits } from "@/db/schema";
 import type { Dealer } from "@/app/dealers";
 import type { DealerInput } from "@/lib/dealer-contract";
 import {
   dealerIdentitiesMatch,
   normalizeDealerIdentityText,
 } from "@/lib/dealer-identity";
+import { canonicalizeAreaName } from "@/lib/area-normalization";
+import type { DealerSummary } from "@/lib/dealer-summary";
 
 function normalizePerson(name: string) {
   return name.trim().replace(/\s+/g, " ").toUpperCase();
@@ -24,6 +26,7 @@ function toDealer(row: {
     dealer: row.dealer.name,
     pincode: row.dealer.pincode,
     area: row.dealer.area,
+    sourceArea: row.dealer.sourceArea ?? undefined,
     address: row.dealer.address ?? undefined,
     state: row.dealer.state,
     latitude: row.dealer.latitude,
@@ -45,7 +48,8 @@ function dealerValues(input: DealerInput, salespersonId: number) {
     salespersonId,
     name: normalizeDealerIdentityText(input.dealer),
     pincode: input.pincode,
-    area: input.area.trim().toUpperCase(),
+    area: canonicalizeAreaName(input.area),
+    sourceArea: input.sourceArea?.trim() || input.area.trim(),
     address: input.address ?? null,
     state: input.state,
     latitude: input.latitude,
@@ -79,6 +83,111 @@ export async function listDealerRecords(salespersonId?: number | null) {
   return rows.map(toDealer);
 }
 
+export async function getDealerRecord(id: number, salespersonId?: number | null) {
+  const [row] = await getDb()
+    .select({ dealer: dealers, salesperson: salespeople })
+    .from(dealers)
+    .innerJoin(salespeople, eq(dealers.salespersonId, salespeople.id))
+    .where(and(eq(dealers.id, id), salespersonId ? eq(dealers.salespersonId, salespersonId) : undefined))
+    .limit(1);
+  return row ? toDealer(row) : null;
+}
+
+export async function getDealerVisitSummary(id: number) {
+  const database = getDb();
+  const [visit] = await database.select({
+    count: count(), lastCompletedAt: max(visits.completedAt),
+  }).from(visits).where(and(eq(visits.dealerId, id), eq(visits.status, "completed")));
+  const [rule] = await database.select({
+    nextDueAt: visitRules.nextDueAt, frequencyDays: visitRules.frequencyDays,
+  }).from(visitRules).where(eq(visitRules.dealerId, id)).limit(1);
+  return {
+    completedVisits: visit?.count ?? 0,
+    lastCompletedAt: visit?.lastCompletedAt?.toISOString() ?? null,
+    nextDueAt: rule?.nextDueAt ?? null,
+    frequencyDays: rule?.frequencyDays ?? 30,
+  };
+}
+
+export async function listDealerSummaries(salespersonId?: number | null): Promise<DealerSummary[]> {
+  const query = getDb().select({
+    id: dealers.id,
+    salesperson: salespeople.normalizedName,
+    dealer: dealers.name,
+    pincode: dealers.pincode,
+    area: dealers.area,
+    address: dealers.address,
+    state: dealers.state,
+    latitude: dealers.latitude,
+    longitude: dealers.longitude,
+    locationPrecision: dealers.locationPrecision,
+    reviewNote: dealers.reviewNote,
+    postalSuggestions: dealers.postalSuggestions,
+    validationStatus: dealers.validationStatus,
+  }).from(dealers).innerJoin(salespeople, eq(dealers.salespersonId, salespeople.id)).orderBy(dealers.id);
+  const rows = salespersonId ? await query.where(eq(dealers.salespersonId, salespersonId)) : await query;
+  return rows.map((row) => ({ ...row, address: row.address ?? undefined, reviewNote: row.reviewNote ?? undefined, postalSuggestions: row.postalSuggestions ?? undefined }));
+}
+
+export type DealerDirectoryQuery = {
+  page: number;
+  pageSize: number;
+  query: string;
+  salespeople: string[];
+  state: string;
+  quality: string;
+  pincode: string;
+  area: string;
+};
+
+export async function listDealerDirectoryPage(filters: DealerDirectoryQuery, salespersonId?: number | null) {
+  const terms: SQL[] = [];
+  if (salespersonId) terms.push(eq(dealers.salespersonId, salespersonId));
+  if (filters.salespeople.length === 0) terms.push(sql`false`);
+  else terms.push(inArray(salespeople.normalizedName, filters.salespeople));
+  if (filters.state !== "all") terms.push(eq(dealers.state, filters.state as typeof dealers.$inferSelect.state));
+  if (filters.pincode !== "all") terms.push(eq(dealers.pincode, filters.pincode));
+  if (filters.area !== "all") terms.push(eq(dealers.area, filters.area));
+  if (filters.quality === "verified") terms.push(eq(dealers.validationStatus, "verified"));
+  if (filters.quality === "review") terms.push(inArray(dealers.validationStatus, ["review", "invalid"]));
+  if (filters.quality === "unchecked") terms.push(inArray(dealers.validationStatus, ["unavailable"]));
+  const normalized = filters.query.trim().toLowerCase();
+  if (normalized) {
+    const pattern = `%${normalized.replace(/[\\%_]/g, "\\$&")}%`;
+    terms.push(sql`lower(concat_ws(' ', ${dealers.name}, ${dealers.address}, ${dealers.area}, ${dealers.pincode}, ${salespeople.normalizedName}, ${dealers.state})) like ${pattern} escape '\\'`);
+  }
+  const where = and(...terms);
+  const database = getDb();
+  const [totalRow] = await database
+    .select({ value: count() })
+    .from(dealers)
+    .innerJoin(salespeople, eq(dealers.salespersonId, salespeople.id))
+    .where(where);
+  const rows = await database
+    .select({
+      id: dealers.id,
+      salesperson: salespeople.normalizedName,
+      dealer: dealers.name,
+      pincode: dealers.pincode,
+      area: dealers.area,
+      address: dealers.address,
+      state: dealers.state,
+      latitude: dealers.latitude,
+      longitude: dealers.longitude,
+      locationPrecision: dealers.locationPrecision,
+      reviewNote: dealers.reviewNote,
+      postalSuggestions: dealers.postalSuggestions,
+      validationStatus: dealers.validationStatus,
+    })
+    .from(dealers)
+    .innerJoin(salespeople, eq(dealers.salespersonId, salespeople.id))
+    .where(where)
+    .orderBy(asc(dealers.name), asc(dealers.area), asc(dealers.pincode), asc(dealers.id))
+    .limit(filters.pageSize)
+    .offset((filters.page - 1) * filters.pageSize);
+  return { dealers: rows.map((row) => ({ ...row, address: row.address ?? undefined, reviewNote: row.reviewNote ?? undefined, postalSuggestions: row.postalSuggestions ?? undefined })), total: totalRow?.value ?? 0, page: filters.page, pageSize: filters.pageSize };
+}
+
 export async function createDealerRecord(input: DealerInput) {
   const database = getDb();
   const person = await getSalesperson(input.salesperson);
@@ -86,6 +195,10 @@ export async function createDealerRecord(input: DealerInput) {
     .insert(dealers)
     .values(dealerValues(input, person.id))
     .returning();
+  await database
+    .insert(visitRules)
+    .values({ dealerId: created.id })
+    .onConflictDoNothing();
   return toDealer({ dealer: created, salesperson: person });
 }
 

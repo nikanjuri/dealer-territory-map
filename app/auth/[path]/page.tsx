@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { signInWithUsername } from "@/lib/session-api";
+import { landingPathForSession } from "@/lib/access-contract";
 
 export default function AuthPage() {
   const params = useParams<{ path: string }>();
@@ -27,10 +28,10 @@ export default function AuthPage() {
     setMessage(null);
 
     try {
-      await signInWithUsername(username, password);
+      const { session } = await signInWithUsername(username, password);
       // A document navigation makes sure the browser commits the auth cookies
       // from the login response before the protected workspace is requested.
-      window.location.replace("/");
+      window.location.replace(landingPathForSession(session));
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -47,15 +48,15 @@ export default function AuthPage() {
   }
 
   return (
-    <main className="grid min-h-screen place-items-center bg-[#eef0ed] px-4 py-10 text-[#18221f]">
-      <section className="w-full max-w-md rounded-2xl border border-[#d9dedb] bg-white p-6 shadow-[0_24px_70px_rgba(15,31,27,0.12)] sm:p-8">
+    <main className="grid min-h-screen place-items-center bg-[#f7f3ea] px-4 py-10 text-[#252a30]">
+      <section className="w-full max-w-md rounded-2xl border border-[#ded7cc] bg-white p-6 shadow-[0_24px_70px_rgba(37,42,48,0.12)] sm:p-8">
         <div className="flex items-center gap-3">
-          <span className="grid h-11 w-11 place-items-center rounded-xl bg-[#d9f36b] text-[#173a34]">
+          <span className="grid h-11 w-11 place-items-center rounded-full bg-[#b65a38] text-white">
             <MapPinned className="h-5 w-5" aria-hidden="true" />
           </span>
           <div>
             <p className="font-semibold tracking-[-0.02em]">Dealer Territory Map</p>
-            <p className="text-sm text-[#6e7874]">Telangana + Andhra Pradesh</p>
+            <p className="text-sm text-[#746f6a]">India dealer operations</p>
           </div>
         </div>
 
@@ -63,8 +64,8 @@ export default function AuthPage() {
           <h1 className="text-2xl font-semibold tracking-[-0.03em]">
             Sign in to the workspace
           </h1>
-          <p className="mt-2 text-sm leading-6 text-[#66716d]">
-            Use the username provided by your administrator to access your assigned dealers and routes.
+          <p className="mt-2 text-sm leading-6 text-[#6f6a65]">
+            Use the username provided by your administrator to access your workspaces.
           </p>
         </div>
 
@@ -99,7 +100,7 @@ export default function AuthPage() {
           ) : null}
 
           <Button
-            className="h-11 w-full bg-[#173a34] text-white transition-[background-color,transform] hover:bg-[#214b43] active:scale-[0.98]"
+            className="h-11 w-full bg-[#252a44] text-white transition-[background-color,transform] hover:bg-[#323952] active:scale-[0.98]"
             disabled={pending}
           >
             {pending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
@@ -108,8 +109,8 @@ export default function AuthPage() {
           </Button>
         </form>
 
-        <p className="mt-6 text-center text-xs leading-5 text-[#6e7874]">
-          Ask the administrator to create or reset a salesperson account.
+        <p className="mt-6 text-center text-xs leading-5 text-[#746f6a]">
+          Ask the administrator to create or reset your account.
         </p>
       </section>
     </main>

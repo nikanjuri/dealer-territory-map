@@ -1,0 +1,1 @@
+ALTER TABLE "dealers" ADD COLUMN "source_area" text;

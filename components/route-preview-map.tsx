@@ -2,16 +2,24 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Dealer } from "@/app/dealers";
-import type { RoutePreview } from "@/lib/route-contract";
+import type {
+  RoutePreview,
+  SavedRoutePlan,
+} from "@/lib/route-contract";
 import { importGoogleMapsLibrary } from "@/lib/google-maps-loader";
+import { resolveGoogleMapsMapId } from "@/lib/google-maps-config";
 
 export function RoutePreviewMap({
   preview,
   dealersById,
 }: {
-  preview: RoutePreview;
+  preview: Pick<RoutePreview | SavedRoutePlan, "stops" | "encodedPolyline">;
   dealersById: Map<number, Dealer>;
 }) {
+  const mapId = resolveGoogleMapsMapId(
+    process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID,
+    process.env.NODE_ENV,
+  );
   const containerRef = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState(false);
 
@@ -24,14 +32,17 @@ export function RoutePreviewMap({
     const googleMapsApiKey = apiKey;
 
     let active = true;
-    const markers: google.maps.Marker[] = [];
+    const markers: Array<google.maps.Marker | google.maps.marker.AdvancedMarkerElement> = [];
     let routeLine: google.maps.Polyline | null = null;
     let map: google.maps.Map | null = null;
 
     async function renderMap() {
-      await Promise.all([
+      const [, , markerLibrary] = await Promise.all([
         importGoogleMapsLibrary(googleMapsApiKey, "maps"),
         importGoogleMapsLibrary(googleMapsApiKey, "geometry"),
+        mapId
+          ? importGoogleMapsLibrary(googleMapsApiKey, "marker")
+          : Promise.resolve(null),
       ]);
       if (!active || !containerRef.current) return;
 
@@ -53,13 +64,14 @@ export function RoutePreviewMap({
         fullscreenControl: false,
         clickableIcons: false,
         gestureHandling: "cooperative",
+        ...(mapId ? { mapId } : {}),
       });
 
       routeLine = new google.maps.Polyline({
         map,
         path: routePath,
         geodesic: false,
-        strokeColor: "#173a34",
+        strokeColor: "#252a44",
         strokeOpacity: 0.92,
         strokeWeight: 5,
       });
@@ -71,19 +83,36 @@ export function RoutePreviewMap({
         if (!dealer) return;
         const position = { lat: dealer.latitude, lng: dealer.longitude };
         bounds.extend(position);
-        markers.push(
-          new google.maps.Marker({
+        if (markerLibrary && mapId) {
+          const pin = new markerLibrary.PinElement({
+            background: "#252a44",
+            borderColor: "#ffffff",
+            glyphColor: "#ffffff",
+            glyphText: String(stop.sequence),
+            scale: 1.1,
+          });
+          const marker = new markerLibrary.AdvancedMarkerElement({
             map,
             position,
             title: `${stop.sequence}. ${dealer.dealer}`,
-            label: {
-              text: String(stop.sequence),
-              color: "#ffffff",
-              fontSize: "12px",
-              fontWeight: "700",
-            },
-          }),
-        );
+          });
+          marker.append(pin);
+          markers.push(marker);
+        } else {
+          markers.push(
+            new google.maps.Marker({
+              map,
+              position,
+              title: `${stop.sequence}. ${dealer.dealer}`,
+              label: {
+                text: String(stop.sequence),
+                color: "#ffffff",
+                fontSize: "12px",
+                fontWeight: "700",
+              },
+            }),
+          );
+        }
       });
       if (!bounds.isEmpty()) map.fitBounds(bounds, 42);
     }
@@ -91,19 +120,22 @@ export function RoutePreviewMap({
     void renderMap().catch(() => active && setFailed(true));
     return () => {
       active = false;
-      markers.forEach((marker) => marker.setMap(null));
+      markers.forEach((marker) => {
+        if (marker instanceof google.maps.Marker) marker.setMap(null);
+        else marker.map = null;
+      });
       routeLine?.setMap(null);
       if (map) google.maps.event.clearInstanceListeners(map);
     };
-  }, [dealersById, preview]);
+  }, [dealersById, mapId, preview]);
 
   if (failed) {
     return (
-      <div className="grid min-h-64 place-items-center rounded-xl border border-dashed border-[#ccd3cf] bg-[#f7f9f7] px-6 text-center">
+      <div className="grid min-h-64 place-items-center rounded-xl border border-dashed border-[#d6cfc4] bg-[#fbf7f1] px-6 text-center">
         <div>
-          <p className="text-sm font-semibold text-[#34423e]">Map preview unavailable</p>
-          <p className="mt-1 text-xs leading-5 text-[#73807b]">
-            Review the ordered stops below. The route has not been saved.
+          <p className="text-sm font-semibold text-[#34333a]">Route map unavailable</p>
+          <p className="mt-1 text-xs leading-5 text-[#7c7771]">
+            Review the ordered stops below or open the route in Google Maps.
           </p>
         </div>
       </div>
@@ -114,8 +146,8 @@ export function RoutePreviewMap({
     <div
       ref={containerRef}
       role="img"
-      aria-label={`Preview of the optimized route with ${preview.stops.length} dealer stops`}
-      className="min-h-64 overflow-hidden rounded-xl border border-[#d8ddda] bg-[#eef1ef] sm:min-h-80"
+      aria-label={`Route map with ${preview.stops.length} dealer stops`}
+      className="min-h-64 overflow-hidden rounded-xl border border-[#ded7cc] bg-[#f4efe8] sm:min-h-80"
     />
   );
 }

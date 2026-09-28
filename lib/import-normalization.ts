@@ -1,4 +1,5 @@
 import type { Dealer } from "../app/dealers";
+import { normalizeIndianState } from "./indian-states.ts";
 
 export type ImportDraftRow = {
   key: string;
@@ -40,10 +41,7 @@ function valueForImportRow(row: Record<string, unknown>, names: string[]) {
 }
 
 function normalizeImportedState(value: string): ImportDraftRow["state"] {
-  const normalized = normalizeImportHeader(value).replace(/\s/g, "");
-  if (["TELANGANA", "TS", "TG"].includes(normalized)) return "Telangana";
-  if (["ANDHRAPRADESH", "AP"].includes(normalized)) return "Andhra Pradesh";
-  return "";
+  return normalizeIndianState(value) ?? "";
 }
 
 export function makeImportDraft(

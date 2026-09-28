@@ -15,6 +15,7 @@ const directory: PostalDirectory = {
     deliveryMirror: "https://example.com/mirror.csv",
     license: "Government Open Data License - India",
     sourceSha256: "test",
+    scope: "India",
   },
   records: {
     "500001": {
@@ -31,6 +32,14 @@ const directory: PostalDirectory = {
         districts: ["Warangal"],
         offices: ["Warangal H.O"],
         blocks: ["Warangal"],
+      },
+    },
+    "585101": {
+      Karnataka: {
+        state: "Karnataka",
+        districts: ["Kalaburagi"],
+        offices: ["Kalaburagi H.O"],
+        blocks: [],
       },
     },
   },
@@ -53,10 +62,21 @@ test("sends a likely spelling variation to review", () => {
     directory,
     "506002",
     "Telangana",
-    "Warngal",
+    "Warrangal",
   );
   assert.equal(result.status, "review");
   assert.equal(result.suggestions[0], "Warangal H.O");
+});
+
+test("verifies a curated high-confidence alias against the postal directory", () => {
+  const result = validatePostalDetails(
+    directory,
+    "506002",
+    "Telangana",
+    "Warngal",
+  );
+  assert.equal(result.status, "verified");
+  assert.equal(result.matchedName, "Warangal H.O");
 });
 
 test("rejects a PIN from the wrong state", () => {
@@ -78,4 +98,85 @@ test("rejects a PIN absent from the scoped directory", () => {
     "Unknown",
   );
   assert.equal(result.status, "invalid");
+});
+
+test("verifies Karnataka postal names in the all-India directory", () => {
+  const result = validatePostalDetails(
+    directory,
+    "585101",
+    "Karnataka",
+    "Kalaburagi",
+  );
+  assert.equal(result.status, "verified");
+});
+
+test("auto-verifies an exact postal district used as the area", () => {
+  const districtDirectory: PostalDirectory = {
+    ...directory,
+    records: {
+      ...directory.records,
+      "500099": {
+        Telangana: {
+          state: "Telangana",
+          districts: ["Hyderabad"],
+          offices: ["Example Colony S.O"],
+          blocks: [],
+        },
+      },
+    },
+  };
+  const result = validatePostalDetails(
+    districtDirectory,
+    "500099",
+    "Telangana",
+    "Hyderabad",
+  );
+  assert.equal(result.status, "verified");
+  assert.equal(result.matchedName, "Hyderabad");
+});
+
+test("auto-verifies a unique spacing-only postal variation", () => {
+  const spacingDirectory: PostalDirectory = {
+    ...directory,
+    records: {
+      ...directory.records,
+      "500028": {
+        Telangana: {
+          state: "Telangana",
+          districts: ["Hyderabad"],
+          offices: ["Humayunnagar S.O"],
+          blocks: [],
+        },
+      },
+    },
+  };
+  const result = validatePostalDetails(
+    spacingDirectory,
+    "500028",
+    "Telangana",
+    "Humayun Nagar",
+  );
+  assert.equal(result.status, "verified");
+  assert.equal(result.matchedName, "Humayunnagar S.O");
+});
+
+test("auto-verifies a postal name followed by source qualifiers", () => {
+  const result = validatePostalDetails(
+    directory,
+    "506002",
+    "Telangana",
+    "Warangal Telangana",
+  );
+  assert.equal(result.status, "verified");
+  assert.equal(result.matchedName, "Warangal H.O");
+});
+
+test("keeps moderate and ambiguous spelling matches in review", () => {
+  const result = validatePostalDetails(
+    directory,
+    "585101",
+    "Karnataka",
+    "Gulbarga",
+  );
+  assert.equal(result.status, "review");
 });

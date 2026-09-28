@@ -6,10 +6,20 @@ import { importGoogleMapsLibrary } from "@/lib/google-maps-loader";
 
 type Availability = "loading" | "ready" | "unavailable";
 
+export type GooglePlaceSelection = {
+  address: string;
+  placeId: string;
+  latitude: number;
+  longitude: number;
+  postalCode: string | null;
+  state: string | null;
+};
+
 export function GooglePlaceAutocomplete({
   id,
   value,
   onChange,
+  onPlaceSelect,
   onAvailabilityChange,
   placeholder,
   describedBy,
@@ -17,6 +27,7 @@ export function GooglePlaceAutocomplete({
   id: string;
   value: string;
   onChange: (value: string) => void;
+  onPlaceSelect?: (place: GooglePlaceSelection) => void;
   onAvailabilityChange?: (availability: Availability) => void;
   placeholder: string;
   describedBy?: string;
@@ -28,6 +39,7 @@ export function GooglePlaceAutocomplete({
   );
   const valueRef = useRef(value);
   const onChangeRef = useRef(onChange);
+  const onPlaceSelectRef = useRef(onPlaceSelect);
   const onAvailabilityChangeRef = useRef(onAvailabilityChange);
   const [availability, setAvailability] = useState<Availability>(
     apiKey ? "loading" : "unavailable",
@@ -36,6 +48,10 @@ export function GooglePlaceAutocomplete({
   useEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
+
+  useEffect(() => {
+    onPlaceSelectRef.current = onPlaceSelect;
+  }, [onPlaceSelect]);
 
   useEffect(() => {
     onAvailabilityChangeRef.current = onAvailabilityChange;
@@ -88,13 +104,24 @@ export function GooglePlaceAutocomplete({
           event as google.maps.places.PlacePredictionSelectEvent;
         const place = placePrediction.toPlace();
         await place.fetchFields({
-          fields: ["displayName", "formattedAddress", "location"],
+          fields: ["displayName", "formattedAddress", "location", "id", "addressComponents"],
         });
         if (!active || !autocomplete) return;
         const selectedValue =
           place.formattedAddress ?? place.displayName ?? autocomplete.value;
         autocomplete.value = selectedValue;
         onChangeRef.current(selectedValue);
+        if (place.id && place.location) {
+          const component = (kind: string) => place.addressComponents?.find((item) => item.types.includes(kind))?.longText ?? null;
+          onPlaceSelectRef.current?.({
+            address: selectedValue,
+            placeId: place.id,
+            latitude: place.location.lat(),
+            longitude: place.location.lng(),
+            postalCode: component("postal_code"),
+            state: component("administrative_area_level_1"),
+          });
+        }
       };
       const handleError = () => {
         if (!active) return;

@@ -37,16 +37,61 @@ export function authEmailForUsername(username: string) {
   return `${normalizeUsername(username)}@dealer-territory.invalid`;
 }
 
-export type AppRole = "admin" | "salesperson";
+export const appRoles = [
+  "admin",
+  "salesperson",
+  "operations_staff",
+  "retailer",
+] as const;
+
+export type AppRole = (typeof appRoles)[number];
 
 export type AppSession = {
   userId: string;
   username: string;
   displayName: string;
   role: AppRole;
+  roles: AppRole[];
   salespersonId: number | null;
   salesperson: string | null;
+  dealerId: number | null;
+  dealer: string | null;
 };
+
+export function hasRole(session: AppSession, role: AppRole) {
+  return session.roles.includes(role);
+}
+
+export function canAccessFieldWorkspace(session: AppSession) {
+  return hasRole(session, "admin") || hasRole(session, "salesperson");
+}
+
+export function canManageCommerce(session: AppSession) {
+  return hasRole(session, "admin") || hasRole(session, "operations_staff");
+}
+
+export function canUseRetailShop(session: AppSession) {
+  return hasRole(session, "retailer") && session.dealerId !== null;
+}
+
+export function canDeleteTeamLogin({
+  actingUserId,
+  targetUserId,
+  targetRoles,
+}: {
+  actingUserId: string;
+  targetUserId: string;
+  targetRoles: AppRole[];
+}) {
+  return actingUserId !== targetUserId && !targetRoles.includes("admin");
+}
+
+export function landingPathForSession(session: AppSession) {
+  if (canAccessFieldWorkspace(session)) return "/";
+  if (canManageCommerce(session)) return "/?workspace=commerce";
+  if (canUseRetailShop(session)) return "/?workspace=shop";
+  return "/auth/sign-in";
+}
 
 export function canOperateOwnRoutes(
   session: AppSession,
@@ -56,7 +101,7 @@ export function canOperateOwnRoutes(
   salesperson: string;
 } {
   return (
-    session.role === "salesperson" &&
+    hasRole(session, "salesperson") &&
     session.salespersonId !== null &&
     session.salesperson !== null
   );

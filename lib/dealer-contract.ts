@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { INDIAN_STATES } from "./indian-states.ts";
 
 const optionalText = z
   .string()
@@ -12,8 +13,9 @@ export const dealerInputSchema = z.object({
   dealer: z.string().trim().min(1).max(240),
   pincode: z.string().regex(/^\d{6}$/),
   area: z.string().trim().min(1).max(180),
+  sourceArea: optionalText,
   address: optionalText,
-  state: z.enum(["Telangana", "Andhra Pradesh"]),
+  state: z.enum(INDIAN_STATES),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
   locationPrecision: z.enum(["address", "pincode"]).optional(),

@@ -16,8 +16,42 @@ const workbook = XLSX.read(bytes, { type: "buffer" });
 const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
 const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
 const selectedStates = new Map([
-  ["TELANGANA", "Telangana"],
+  ["ANDAMAN AND NICOBAR ISLANDS", "Andaman and Nicobar Islands"],
   ["ANDHRA PRADESH", "Andhra Pradesh"],
+  ["ARUNACHAL PRADESH", "Arunachal Pradesh"],
+  ["ASSAM", "Assam"],
+  ["BIHAR", "Bihar"],
+  ["CHANDIGARH", "Chandigarh"],
+  ["CHHATTISGARH", "Chhattisgarh"],
+  ["DELHI", "Delhi"],
+  ["GOA", "Goa"],
+  ["GUJARAT", "Gujarat"],
+  ["HARYANA", "Haryana"],
+  ["HIMACHAL PRADESH", "Himachal Pradesh"],
+  ["JAMMU AND KASHMIR", "Jammu and Kashmir"],
+  ["JHARKHAND", "Jharkhand"],
+  ["KARNATAKA", "Karnataka"],
+  ["KERALA", "Kerala"],
+  ["LADAKH", "Ladakh"],
+  ["LAKSHADWEEP", "Lakshadweep"],
+  ["MADHYA PRADESH", "Madhya Pradesh"],
+  ["MAHARASHTRA", "Maharashtra"],
+  ["MANIPUR", "Manipur"],
+  ["MEGHALAYA", "Meghalaya"],
+  ["MIZORAM", "Mizoram"],
+  ["NAGALAND", "Nagaland"],
+  ["ODISHA", "Odisha"],
+  ["PUDUCHERRY", "Puducherry"],
+  ["PUNJAB", "Punjab"],
+  ["RAJASTHAN", "Rajasthan"],
+  ["SIKKIM", "Sikkim"],
+  ["TAMIL NADU", "Tamil Nadu"],
+  ["TELANGANA", "Telangana"],
+  ["THE DADRA AND NAGAR HAVELI AND DAMAN AND DIU", "Dadra and Nagar Haveli and Daman and Diu"],
+  ["TRIPURA", "Tripura"],
+  ["UTTAR PRADESH", "Uttar Pradesh"],
+  ["UTTARAKHAND", "Uttarakhand"],
+  ["WEST BENGAL", "West Bengal"],
 ]);
 const grouped = new Map();
 
@@ -58,7 +92,7 @@ for (const entry of [...grouped.values()].sort((left, right) =>
   };
 }
 
-if (grouped.size < 1_500) {
+if (grouped.size < 19_000) {
   throw new Error("Postal extract is unexpectedly small; refusing to replace it.");
 }
 
@@ -72,6 +106,7 @@ const output = {
     deliveryMirror,
     license: "Government Open Data License - India",
     sourceSha256: createHash("sha256").update(bytes).digest("hex"),
+    scope: "India",
   },
   records,
 };
@@ -83,5 +118,5 @@ const outputUrl = new URL(
 await fs.mkdir(new URL("../public/data/", import.meta.url), { recursive: true });
 await fs.writeFile(outputUrl, JSON.stringify(output));
 console.log(
-  `Saved ${grouped.size} state-scoped entries across ${Object.keys(records).length} PIN codes.`,
+  `Saved ${grouped.size} all-India entries across ${Object.keys(records).length} PIN codes.`,
 );

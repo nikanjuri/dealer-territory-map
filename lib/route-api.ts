@@ -5,11 +5,17 @@ import type {
   RouteWorkspaceData,
 } from "@/lib/route-contract";
 
+export class RouteApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
 async function readResponse<T>(response: Response): Promise<T> {
   const body = (await response.json().catch(() => ({}))) as {
     error?: string;
   } & T;
-  if (!response.ok) throw new Error(body.error ?? "The route request failed.");
+  if (!response.ok) throw new RouteApiError(body.error ?? "The route request failed.", response.status);
   return body;
 }
 

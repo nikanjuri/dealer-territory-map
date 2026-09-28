@@ -1,7 +1,8 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { appUsers, salespeople } from "@/db/schema";
+import { appUserRoles, appUsers, salespeople } from "@/db/schema";
 import {
+  canAccessFieldWorkspace,
   authEmailForUsername,
   createSalespersonSchema,
   normalizeSalespersonName,
@@ -31,13 +32,16 @@ function serialize(row: {
 export async function GET() {
   const session = await getAppSession();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (!canAccessFieldWorkspace(session)) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   const rows = await getDb()
     .select({ salesperson: salespeople, account: appUsers })
     .from(salespeople)
     .leftJoin(appUsers, eq(appUsers.salespersonId, salespeople.id))
     .where(
-      session.role === "salesperson" && session.salespersonId
+      !isAdmin(session) && session.salespersonId
         ? eq(salespeople.id, session.salespersonId)
         : undefined,
     )
@@ -126,7 +130,14 @@ export async function POST(request: Request) {
         salespersonId: person.id,
       })
       .returning();
+    await database.insert(appUserRoles).values({
+      authUserId: account.authUserId,
+      role: "salesperson",
+    });
   } catch (error) {
+    await database
+      .delete(appUsers)
+      .where(eq(appUsers.authUserId, authResult.data.user.id));
     await getAuth().admin.removeUser({ userId: authResult.data.user.id });
     throw error;
   }

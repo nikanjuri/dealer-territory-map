@@ -13,7 +13,7 @@ const selected = geojson.features
       ...feature.properties,
       displayName:
         feature.properties.shapeISO === "IN-TG" ? "Telangana" : "Andhra Pradesh",
-      coverage: "unassigned",
+      coverage: "context",
     },
   }));
 if (selected.length !== 2) throw new Error("Expected Telangana and Andhra Pradesh boundaries");

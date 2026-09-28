@@ -1,4 +1,6 @@
 import type { Dealer } from "@/app/dealers";
+import type { DealerSummary } from "@/lib/dealer-summary";
+import type { DealerFilters } from "@/lib/dealer-filters";
 
 type ApiError = { error?: string };
 
@@ -12,6 +14,23 @@ export async function fetchDealers() {
   const response = await fetch("/api/dealers", { cache: "no-store" });
   const body = await readJson<{ dealers: Dealer[] }>(response);
   return body.dealers;
+}
+
+export async function fetchDealerDetail(id: number) {
+  const response = await fetch(`/api/dealers/${id}`, { cache: "no-store" });
+  const body = await readJson<{ dealer: Dealer }>(response);
+  return body.dealer;
+}
+
+export async function fetchDealerDirectoryPage(filters: DealerFilters, page: number) {
+  const params = new URLSearchParams({
+    page: String(page), pageSize: "100", query: filters.query,
+    state: filters.state, quality: filters.quality,
+    pincode: filters.pincode, area: filters.area,
+  });
+  for (const person of filters.salespeople) params.append("salesperson", person);
+  const response = await fetch(`/api/dealers/directory?${params}`, { cache: "no-store" });
+  return readJson<{ dealers: DealerSummary[]; total: number; page: number; pageSize: number }>(response);
 }
 
 export async function createDealer(dealer: Omit<Dealer, "id">) {

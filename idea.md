@@ -14,6 +14,8 @@ Sales leadership cannot quickly see who owns a geographic area, where dealers ar
 - Salespeople checking their areas and dealer list
 - Operations staff maintaining dealer and assignment data
 - Salespeople planning daily visits and recording completed dealer calls
+- Retailers placing repeat orders from the approved product catalog
+- Commerce staff maintaining products and processing dealer orders
 
 ## Core Jobs
 
@@ -24,6 +26,8 @@ Sales leadership cannot quickly see who owns a geographic area, where dealers ar
 - Review questionable PIN-code and area combinations before relying on them.
 - Build an efficient daily route from the dealers due for a visit and retain visit history.
 - Let administrators review route and visit activity without planning or updating routes on a salesperson's behalf.
+- Let linked retailer accounts browse products, place orders, and review their own shop's order history.
+- Let operations staff maintain the shared catalog and process orders without receiving territory administration access.
 
 ## Initial Data Contract
 
@@ -47,6 +51,8 @@ Records without a full address keep an approximate PIN-code point. Full addresse
 - Shared authenticated persistence in Neon Postgres.
 - A route-planning foundation for visit frequency, daily plans, stops, and completed visits.
 - Username-based accounts with administrator and salesperson roles.
+- One username/password login system with retailer, salesperson, operations-staff, and administrator roles; one internal account may hold both salesperson and operations-staff access.
+- A complete Neon replacement for the former `amit-retail` Supabase database, Auth, Storage, Realtime, and Edge Function dependencies, with a deletion-gated legacy import.
 
 ## Constraints
 
@@ -58,6 +64,9 @@ Records without a full address keep an approximate PIN-code point. Full addresse
 - Salespeople plan and operate their own routes. Administrators have read-only route oversight across the team.
 - Administrators set up each salesperson's username and initial password from Team, and can replace a forgotten password without viewing the existing one.
 - One dealer record has one salesperson owner. A matching dealer name plus PIN or full address must be reassigned by an administrator instead of duplicated under another salesperson.
+- Retailer accounts must link to an existing dealer record. Client applications never determine authoritative prices or order totals.
+- Commerce authentication uses Neon Auth username/password credentials only. Do not add phone OTP or silently synthesize passwords while migrating legacy retailer identities.
+- Preserve legacy catalog, order, retailer, and image records with source identifiers until migration parity is accepted; do not delete the source repository merely because the target schema exists.
 
 ## Non-goals for the Prototype
 

@@ -99,8 +99,10 @@ export type SavedRoutePlan = {
   totalPlannedSeconds: number | null;
   estimatedEndAt: string | null;
   warning: string | null;
+  encodedPolyline?: string;
   stops: SavedRouteStop[];
   createdAt: string;
+  updatedAt: string;
 };
 
 export type RouteWorkspaceData = {
