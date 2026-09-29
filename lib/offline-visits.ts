@@ -7,6 +7,7 @@ export type PendingVisit = {
   stopId: number;
   status: RouteStopStatus;
   queuedAt: string;
+  revision?: string;
 };
 
 const DB_NAME = "dealer-ops-visit-outbox-v1";
@@ -34,6 +35,7 @@ async function run<T>(mode: IDBTransactionMode, operation: (store: IDBObjectStor
       transaction.oncomplete = () => resolve(request.result);
       request.onerror = () => reject(request.error);
       transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error ?? new Error("Offline visit storage transaction was aborted."));
     });
   } finally {
     db.close();
@@ -45,6 +47,7 @@ export async function queueVisit(visit: Omit<PendingVisit, "key" | "queuedAt">) 
     ...visit,
     key: `${visit.userId}:${visit.planId}:${visit.stopId}`,
     queuedAt: new Date().toISOString(),
+    revision: crypto.randomUUID(),
   } satisfies PendingVisit));
 }
 
@@ -53,11 +56,31 @@ export async function pendingVisits(userId: string): Promise<PendingVisit[]> {
   return all.filter((visit) => visit.userId === userId).sort((a, b) => a.queuedAt.localeCompare(b.queuedAt));
 }
 
-export async function removePendingVisit(key: string) {
-  await run("readwrite", (store) => store.delete(key));
+export async function removePendingVisit(key: string, expected?: PendingVisit) {
+  await run("readwrite", (store) => {
+    const request = store.get(key);
+    request.onsuccess = () => {
+      const current = request.result as PendingVisit | undefined;
+      if (!expected || (current && (expected.revision
+        ? current.revision === expected.revision
+        : !current.revision && current.queuedAt === expected.queuedAt && current.status === expected.status))) {
+        store.delete(key);
+      }
+    };
+    return request;
+  });
 }
 
-export async function clearPendingVisits() {
-  if (!("indexedDB" in window)) return;
-  await run("readwrite", (store) => store.clear());
+export async function clearPendingVisits(userId: string) {
+  if (typeof indexedDB === "undefined") return;
+  await run("readwrite", (store) => {
+    const request = store.openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      if ((cursor.value as PendingVisit).userId === userId) cursor.delete();
+      cursor.continue();
+    };
+    return request;
+  });
 }

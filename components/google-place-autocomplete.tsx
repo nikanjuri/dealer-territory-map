@@ -68,6 +68,7 @@ export function GooglePlaceAutocomplete({
     const autocompleteContainer: HTMLDivElement = container;
 
     let active = true;
+    let selectionVersion = 0;
     let autocomplete: google.maps.places.PlaceAutocompleteElement | null = null;
 
     async function mountAutocomplete() {
@@ -97,30 +98,38 @@ export function GooglePlaceAutocomplete({
       if (describedBy) autocomplete.setAttribute("aria-describedby", describedBy);
 
       const handleInput = () => {
+        selectionVersion += 1;
         if (autocomplete) onChangeRef.current(autocomplete.value);
       };
       const handleSelect = async (event: Event) => {
-        const { placePrediction } =
-          event as google.maps.places.PlacePredictionSelectEvent;
-        const place = placePrediction.toPlace();
-        await place.fetchFields({
-          fields: ["displayName", "formattedAddress", "location", "id", "addressComponents"],
-        });
-        if (!active || !autocomplete) return;
-        const selectedValue =
-          place.formattedAddress ?? place.displayName ?? autocomplete.value;
-        autocomplete.value = selectedValue;
-        onChangeRef.current(selectedValue);
-        if (place.id && place.location) {
-          const component = (kind: string) => place.addressComponents?.find((item) => item.types.includes(kind))?.longText ?? null;
-          onPlaceSelectRef.current?.({
-            address: selectedValue,
-            placeId: place.id,
-            latitude: place.location.lat(),
-            longitude: place.location.lng(),
-            postalCode: component("postal_code"),
-            state: component("administrative_area_level_1"),
+        const version = ++selectionVersion;
+        try {
+          const { placePrediction } =
+            event as google.maps.places.PlacePredictionSelectEvent;
+          const place = placePrediction.toPlace();
+          await place.fetchFields({
+            fields: ["displayName", "formattedAddress", "location", "id", "addressComponents"],
           });
+          if (!active || !autocomplete || version !== selectionVersion) return;
+          const selectedValue =
+            place.formattedAddress ?? place.displayName ?? autocomplete.value;
+          autocomplete.value = selectedValue;
+          onChangeRef.current(selectedValue);
+          if (place.id && place.location) {
+            const component = (kind: string) => place.addressComponents?.find((item) => item.types.includes(kind))?.longText ?? null;
+            onPlaceSelectRef.current?.({
+              address: selectedValue,
+              placeId: place.id,
+              latitude: place.location.lat(),
+              longitude: place.location.lng(),
+              postalCode: component("postal_code"),
+              state: component("administrative_area_level_1"),
+            });
+          }
+        } catch {
+          if (!active || version !== selectionVersion) return;
+          setAvailability("unavailable");
+          onAvailabilityChangeRef.current?.("unavailable");
         }
       };
       const handleError = () => {
@@ -183,8 +192,8 @@ export function GooglePlaceAutocomplete({
   }
 
   return (
-    <div className="relative min-h-9">
-      <div ref={containerRef} className="min-h-9 w-full" />
+    <div className="relative min-h-9 min-w-0 max-w-full">
+      <div ref={containerRef} className="min-h-9 w-full min-w-0 max-w-full" />
       {availability === "loading" ? (
         <Input
           value={value}

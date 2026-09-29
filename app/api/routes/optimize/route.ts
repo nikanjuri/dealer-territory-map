@@ -6,6 +6,7 @@ import { optimizeRoutePreview } from "@/lib/route-optimizer";
 import {
   createRoutePreviewToken,
   routePreviewSecret,
+  routeDealerFingerprint,
 } from "@/lib/route-preview";
 import { routeFallbackWarning } from "@/lib/route-warning";
 import {
@@ -110,6 +111,7 @@ export async function POST(request: Request) {
     provider,
     warning,
     encodedPolyline,
+    dealerFingerprint: routeDealerFingerprint(routeDealers),
   }, routePreviewSecret());
   const preview: RoutePreview = {
     token,

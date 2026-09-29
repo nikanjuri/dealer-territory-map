@@ -5,6 +5,7 @@ import { routePreviewSaveSchema } from "@/lib/route-contract";
 import {
   readRoutePreviewToken,
   routePreviewSecret,
+  routeDealerFingerprint,
 } from "@/lib/route-preview";
 import { buildRouteSchedule, formatRouteDuration } from "@/lib/route-schedule";
 import {
@@ -61,6 +62,12 @@ export async function POST(request: Request) {
   if (routeDealers.length !== new Set(preview.request.dealerIds).size) {
     return Response.json(
       { error: "Dealer assignments changed. Optimize this route again." },
+      { status: 409 },
+    );
+  }
+  if (preview.dealerFingerprint !== routeDealerFingerprint(routeDealers)) {
+    return Response.json(
+      { error: "Dealer locations or visit durations changed. Optimize this route again." },
       { status: 409 },
     );
   }

@@ -4134,7 +4134,7 @@ export default function Home() {
                   const { pendingVisits, clearPendingVisits } = await import("@/lib/offline-visits");
                   const pending = await pendingVisits(session.userId);
                   if (pending.length && !window.confirm(`${pending.length} visit updates have not synced. Sign out and discard them?`)) return;
-                  await clearPendingVisits();
+                  await clearPendingVisits(session.userId);
                 } catch {
                   toast.error("Could not clear this device’s pending visit updates. Try again.");
                   return;

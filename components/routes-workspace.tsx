@@ -824,7 +824,7 @@ export function RoutesWorkspace({
       const visits = await pendingVisits(userId);
       for (const visit of visits) {
         await updateRouteStop(visit.planId, visit.stopId, visit.status);
-        await removePendingVisit(visit.key);
+        await removePendingVisit(visit.key, visit);
       }
       const remaining = await pendingVisits(userId);
       setQueuedStops(new Set(remaining.map((visit) => visit.stopId)));
@@ -1208,8 +1208,8 @@ export function RoutesWorkspace({
           </div>
         ) : null}
 
-        <div className={`mt-6 ${routeMode === "plan" ? "grid gap-5 xl:grid-cols-[minmax(0,0.92fr)_minmax(420px,1.08fr)]" : ""}`}>
-          {routeMode === "plan" ? <div className="space-y-5">
+        <div className={`mt-6 min-w-0 ${routeMode === "plan" ? "grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]" : ""}`}>
+          {routeMode === "plan" ? <div className="min-w-0 space-y-5">
             <section className="rounded-2xl border border-[#ded7cc] bg-white p-4 shadow-[0_8px_24px_rgba(37,42,68,0.05)] sm:p-5">
               <div className="flex items-center gap-2">
                 <span className="grid h-8 w-8 place-items-center rounded-lg bg-[#f4e5de] text-[#252a44]">
@@ -1221,7 +1221,7 @@ export function RoutesWorkspace({
                 </div>
               </div>
 
-              <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <div className="mt-5 grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="rounded-xl border border-[#e5ded4] bg-[#faf5ee] px-3 py-2.5">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6f6a65]">
                     Planning for
@@ -1320,7 +1320,7 @@ export function RoutesWorkspace({
             </section>
 
             <section id="route-dealer-selection" className="rounded-2xl border border-[#ded7cc] bg-white p-4 shadow-[0_8px_24px_rgba(37,42,68,0.05)] sm:p-5">
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h3 className="text-sm font-semibold">Choose today’s dealers</h3>
                   <p className="mt-1 text-xs text-[#6f6a65]">{selectedDealerIds.length} of {salespersonDealers.length} selected</p>
@@ -1403,7 +1403,7 @@ export function RoutesWorkspace({
             </section>
           </div> : null}
 
-          <div className="space-y-5">
+          <div className="min-w-0 space-y-5">
             <section className="rounded-2xl border border-[#ded7cc] bg-white p-4 shadow-[0_8px_24px_rgba(37,42,68,0.05)] sm:p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -1419,7 +1419,7 @@ export function RoutesWorkspace({
                     Unsaved preview
                   </span>
                 ) : workspace?.plans.length ? (
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6f6a65]">
                       Route history
                     </span>

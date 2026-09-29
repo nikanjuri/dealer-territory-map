@@ -149,6 +149,8 @@ body {
 .dealer-place-autocomplete {
   display: block;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   min-height: 2.25rem;
   color-scheme: light;
 }

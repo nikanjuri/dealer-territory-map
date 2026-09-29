@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import {
   routePlanRequestSchema,
@@ -24,6 +24,7 @@ const routePreviewPayloadSchema = z.object({
   provider: z.enum(["google-routes", "geometry-preview"]),
   warning: z.string().nullable(),
   encodedPolyline: z.string().optional(),
+  dealerFingerprint: z.string().optional(),
 });
 
 export type RoutePreviewPayload = {
@@ -34,7 +35,23 @@ export type RoutePreviewPayload = {
   provider: "google-routes" | "geometry-preview";
   warning: string | null;
   encodedPolyline?: string;
+  dealerFingerprint?: string;
 };
+
+// A signed preview must not survive a changed dealer pin or service duration.
+export function routeDealerFingerprint(dealers: Array<{
+  id: number; latitude: number; longitude: number;
+  locationPrecision?: string; address?: string; googlePlaceId?: string;
+  serviceMinutes: number;
+}>) {
+  const snapshot = dealers.map((dealer) => ({
+    id: dealer.id, latitude: dealer.latitude, longitude: dealer.longitude,
+    precision: dealer.locationPrecision ?? "pincode",
+    address: dealer.address ?? "", placeId: dealer.googlePlaceId ?? "",
+    serviceMinutes: dealer.serviceMinutes,
+  })).sort((a, b) => a.id - b.id);
+  return createHash("sha256").update(JSON.stringify(snapshot)).digest("hex");
+}
 
 function signatureFor(value: string, secret: string) {
   return createHmac("sha256", `dealer-route-preview-v1\0${secret}`)

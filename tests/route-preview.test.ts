@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   createRoutePreviewToken,
   readRoutePreviewToken,
+  routeDealerFingerprint,
 } from "../lib/route-preview.ts";
 
 const now = new Date("2026-09-20T00:00:00.000Z");
@@ -63,4 +64,19 @@ test("rejects an expired route preview", () => {
       ),
     /expired/i,
   );
+});
+
+test("dealer fingerprints ignore query order but detect changed routing inputs", () => {
+  const first = { id: 1, latitude: 17.4, longitude: 78.4, serviceMinutes: 30 };
+  const second = { ...first, id: 2 };
+  const fingerprint = routeDealerFingerprint([first, second]);
+  assert.equal(fingerprint, routeDealerFingerprint([second, first]));
+  for (const change of [{ latitude: 17.5 }, { longitude: 78.5 }, { serviceMinutes: 60 }, { address: "New address" }, { googlePlaceId: "new-place" }, { locationPrecision: "address" }]) {
+    assert.notEqual(fingerprint, routeDealerFingerprint([{ ...first, ...change }, second]));
+  }
+});
+
+test("signed previews preserve the routing input fingerprint", () => {
+  const token = createRoutePreviewToken({ ...payload, dealerFingerprint: "snapshot" }, "test-secret", now);
+  assert.equal(readRoutePreviewToken(token, "test-secret", now).dealerFingerprint, "snapshot");
 });
