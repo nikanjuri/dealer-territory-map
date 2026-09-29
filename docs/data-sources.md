@@ -18,9 +18,21 @@ The 2024 layer fills three PIN gaps found in the 2025 layer: 500025, 500095, and
 
 These polygons are the current territory unit, not a permanent business rule. Sales leadership should review whether postal boundaries match real salesperson ownership before production use.
 
+The map preserves primary results before a fallback query and attempts the fallback during primary failures. Successfully loaded public polygons are stored in versioned browser IndexedDB for at most 30 days and 4,000 PINs; this contains no dealer/employee identities or assignments. Geometry must have closed, finite WGS84 Polygon/MultiPolygon rings and a matching requested PIN. Invalid responses, provider errors and absent polygons are not cached as successful geometry. Retries fetch only unresolved PINs, and missing areas remain explicitly unavailable rather than being guessed. This is a per-browser/origin cache, not a shared authoritative backend: first visits and cache expiration still depend on upstream availability. Server-side dealer geographic validation does not trust the browser cache.
+
 ## State context
 
-`public/region-boundaries.geojson` contains the Telangana and Andhra Pradesh state outlines used as neutral geographic context. PIN polygons determine colored coverage; a slate PIN with an amber outline contains dealers assigned to multiple salespeople.
+`public/state-boundaries/IN-*.geojson` contains one outline for each of the 36 Indian states and union territories. Both map renderers load state highlights only for states with more than 50 current authenticated, filtered dealer markers, or for an explicitly selected state with matching dealers. Counts use dealer records, not distinct PIN codes or sidebar pagination; empty results remove highlights. Dealer markers and PIN polygons remain independent of this threshold. Outlines are cached and remain neutral grey context, not salesperson ownership, evidence of dealer accuracy, or coverage across an entire state. PIN polygons determine salesperson-colored coverage; a slate PIN with an amber outline contains dealers assigned to multiple salespeople.
+
+- Delivery: [geoBoundaries gbOpen India ADM1 simplified geometry](https://github.com/wmgeolab/geoBoundaries/raw/9469f09/releaseData/gbOpen/IND/ADM1/geoBoundaries-IND-ADM1_simplified.geojson), pinned revision `9469f09`.
+- Source attribution in [the pinned metadata](https://github.com/wmgeolab/geoBoundaries/raw/9469f09/releaseData/gbOpen/IND/ADM1/geoBoundaries-IND-ADM1-metaData.json): DataMeet India community and Election Commission of India.
+- Source license in that metadata: [Creative Commons Attribution 2.5 India](https://creativecommons.org/licenses/by/2.5/in/). geoBoundaries also requests acknowledgment of its [CC BY 4.0 distribution](https://www.geoboundaries.org/); both source and delivery are linked in the map's Coverage info disclosure.
+- Metadata boundary year: 2011; geoBoundaries build date: December 12, 2023. These are cartographic context, not a current legal-boundary certification.
+- Retrieved for the full-state expansion: 2026-09-29.
+- Pinned source SHA-256: `4c63fe43294a391e8f2de4e9f86f3edb60f8688275b9fee90c61fb2aa0c26061`.
+- Regenerate with `node scripts/fetch-region-boundaries.mjs`; it validates the source hash and requires all 36 distinct ISO identifiers before writing assets.
+
+`public/region-boundaries.geojson` remains the unchanged Telangana/Andhra Pradesh artifact used by existing geographic audit/repair scripts. Expanding map context does not silently change those scripts or mutate dealer data.
 
 ## Postal directory validation
 

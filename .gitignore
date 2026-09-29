@@ -46,6 +46,8 @@ next-env.d.ts
 /.codex/
 /outputs/
 /work/
+# Source dealer workbooks are private input, never a public release artifact.
+/raw-data/
 /public/maplibre-gl-worker.mjs
 /public/maplibre-gl-shared.mjs
 /public/maplibre-gl.LICENSE.txt

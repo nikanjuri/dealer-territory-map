@@ -4,6 +4,25 @@
 
 Unified field operations and dealer ordering.
 
+## Release QA — 2026-09-29
+
+- [ ] TASK-001: Complete isolated authenticated release QA, then deploy the reviewed main snapshot.
+  - Outcome: Release the map resilience changes and matching operations/commerce code without test writes to the shared production database.
+  - Acceptance: Exact-address route save/visit/admin readback, offline replay, retailer checkout/reorder, operations-only and dual-role journeys pass; live deployment is reverified.
+  - Verification: `npm run verify`, representative authenticated browser journeys, reviewed upload contents, Vercel production smoke checks.
+  - Evidence: Final verification passes 142 tests, lint, TypeScript and production build. All 81 isolated authenticated API assertions and representative mobile/desktop browser route, visit, checkout/reorder and additive-role journeys pass. Real backend connection loss exercised IndexedDB queue/replay and terminal conflict recovery; physical-device offline events remain outside this run. Both disposable QA branches were deleted, the original local environment is restored and 13 live application-table baselines are unchanged. Main push and hosted promotion remain pending. See `docs/audits/RELEASE_QA_2026-09-29.md`.
+- [x] Exclude private source workbooks and local credentials/provider state from Git and Vercel CLI release packaging. Source workbooks remain on disk.
+
+## 2026-09-29 dealer-state map context
+
+- [x] Harden PIN-boundary loading against partial/provider failures, preserve primary results, use fallback during primary outages, validate real geometry and add a bounded 30-day public-only IndexedDB cache. Count unresolved PIN areas, retain dealer markers, scope warnings to current filters and disable concurrent retries. Add persistence, timeout, cancellation, malformed-response and fail-closed server-lookup tests. Local automated and browser evidence: `docs/audits/PIN_BOUNDARY_RESILIENCE_2026-09-29.md`; no push/deployment or hosted data changes.
+
+- [x] Replace the fixed AP/Telangana backdrop with neutral outlines for every state represented by the currently visible, authenticated dealer records, in Google Maps and MapLibre.
+- [x] Check in 36 ISO-keyed, on-demand state/union-territory assets with pinned provenance and license attribution; retain the original two-state audit artifact unchanged.
+- [x] Cache shared outline requests, retry failed states, clear out-of-scope highlights immediately, and keep PIN ownership colors above state context.
+- [x] Complete automated and Google Maps desktop/mobile browser verification of this local-only map change. All 115 tests, lint, typecheck and production build pass; Karnataka, Kerala, reset, empty results and keyboard disclosure were checked. MapLibre shares the tested loader/selector and compiles but was not forced into a live fallback session. See `docs/audits/STATE_CONTEXT_2026-09-29.md`.
+- [x] Refine state highlights to more than 50 filtered dealer markers, with an explicit nonempty selected-state exception; preserve dealer pins and PIN ownership layers below the threshold. Fix rebuilt-map readiness so Fast Refresh cannot strand detached markers. All 120 tests, lint, typecheck and production build pass; desktop default pins and mobile Kerala search/selected-state behavior were checked locally. No push or deployment performed.
+
 ## 2026-09-26 local implementation checkpoint
 
 - [x] Add a Today-first salesperson route view and a reviewable seven-day visit suggestion; keep Google Routes responsible for each day's actual driving order.
@@ -18,7 +37,7 @@ Unified field operations and dealer ordering.
 - [ ] Run authenticated administrator, salesperson, and retailer desktop/mobile QA with representative data and measure real workspace timings. On 2026-09-28, existing administrator sign-in, all five tab reads, mobile identity, directory search, and edit-form loading were checked. Salesperson sign-in, own-dealer UI, a cross-owner dealer read denial, mobile identity and route prerequisites were also checked after corrected credentials were supplied. Retailer/catalog fixtures remain missing; road-routing previews, route/visit/order writes and offline replay are not cleared. See `docs/audits/AUTHENTICATED_QA_2026-09-28.md`.
 - [x] Push the authorized application snapshot to `codex/operations-checkpoint-2026-09-28` before further checks, excluding source workbooks and secrets. A subsequent authenticated Google road preview and six isolated persistence/storage test groups passed; no live routes, visits or orders were saved. See `docs/audits/POST_PUSH_CHECKS_2026-09-28.md`.
 - [x] Fix and reverify mobile route planning/review clipping at 320, 390 and 768 px (2026-09-29). Fix user-scoped outbox clearing, acknowledgment races, transaction abort handling, Google lookup errors and changed-routing-input save validation. All 108 tests and six isolated persistence groups pass; see `docs/audits/MAIN_QA_2026-09-29.md`.
-- [ ] Complete isolated authenticated write/offline/retailer and operations-role journeys. Development shares production's database; the current Neon CLI cannot manage the existing project's branches. Main promotion was explicitly authorized, but does not clear these QA gates.
+- [x] Complete isolated authenticated browser route/visit, connection-loss/replay/conflict, retailer checkout/reorder and operations/additive-role journeys. Development shares production's database; fixture writes were isolated to disposable database/Auth copies, both deleted afterward. Physical-device offline-event testing and optional notification delivery are not claimed. See `docs/audits/RELEASE_QA_2026-09-29.md`.
 
 ## Completed
 

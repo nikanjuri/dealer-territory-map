@@ -175,7 +175,9 @@ export function CommerceWorkspace({
           Commerce operations
         </h2>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6f6a65]">
-          Maintain the dealer catalog, process orders, and control who can access ordering operations.
+          {isAdmin
+            ? "Maintain the dealer catalog, process orders, and control who can access ordering operations."
+            : "Maintain the dealer catalog and process dealer orders."}
         </p>
       </div>
       {message ? (
@@ -291,10 +293,10 @@ function DashboardPanel({
           <CardHeader className="px-5">
             <CardTitle>Commerce readiness</CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-3 px-5 sm:grid-cols-3">
+          <CardContent className={`grid gap-3 px-5 ${isAdmin ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
             {[
               ["Products", products.length, "Catalog items"],
-              ["Retailers", accounts.filter((account) => account.roles.includes("retailer")).length, "Linked accounts"],
+              ...(isAdmin ? [["Retailers", accounts.filter((account) => account.roles.includes("retailer")).length, "Linked accounts"]] : []),
               ["Orders", orders.length, "All-time orders"],
             ].map(([label, count, detail]) => (
               <div key={String(label)} className="rounded-xl border border-[#e7dfd4] bg-[#fffcf7] p-4">

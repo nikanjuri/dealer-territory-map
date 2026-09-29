@@ -4,7 +4,11 @@ An authenticated operational suite for salesperson territories, dealer routes an
 
 ## Current Status
 
-The 2026-09-29 main-promotion checkpoint fixes mobile route clipping, offline visit outbox races and scoping, address lookup errors, and stale routing-input saves. All 108 automated tests, lint, typecheck, production build and six isolated persistence groups pass. See [the current QA record](docs/audits/MAIN_QA_2026-09-29.md) for browser checks and the remaining isolated authenticated write/retailer/offline gates. Deployment completion must be checked separately from the authorized Git push.
+The local map highlights states with more than 50 currently visible dealer markers. Explicitly selecting a state with matching dealers shows its outline even below that threshold. This counts dealer markers, not distinct PIN codes or paginated sidebar rows; filters and salesperson scope apply before counting. Dealer markers and salesperson-colored PIN coverage remain independent of the neutral state highlights. Both Google Maps and MapLibre share on-demand, cached outlines supporting all 36 Indian states and union territories. This map change has not been pushed or deployed.
+
+PIN loading preserves each successful provider response before trying the backup, which is also attempted during a primary outage. Public postal geometry is validated and cached in browser IndexedDB for up to 30 days, bounded to 4,000 PINs and versioned by dataset. Dealer records, identities and assignments are never persisted in this cache. Retry fetches only unresolved PINs; remaining unavailable areas are counted without hiding dealer markers or fabricating boundaries. The cache helps previously loaded areas, not never-fetched areas during a total provider outage.
+
+The 2026-09-29 release checkpoint fixes mobile route clipping, visit outbox races/scoping, address lookup errors, stale routing-input saves, retailer reorder feedback and delayed dealer editors. Final verification passes **142 tests**, lint, typecheck and production build. All 81 isolated authenticated HTTP assertions and representative browser road-route save/visit/admin readback, checkout/reorder and role journeys pass. Actual backend connection loss exercised local persistence, replay and conflict recovery; physical-device offline transitions and optional notifications are not claimed. Both disposable Neon database/Auth copies were deleted and localhost uses its original environment. Thirteen live application-table baselines remain unchanged. See [the release QA record](docs/audits/RELEASE_QA_2026-09-29.md) and [earlier UI checks](docs/audits/MAIN_QA_2026-09-29.md). Main push and hosted release verification remain pending.
 
 The local application now includes the full retailer-ordering workflow on Neon: an authenticated catalog and cart, MOQ-aware checkout, order history and reorder, commerce dashboards and fulfillment, product/category/variant management, Neon-stored product images, retailer account administration, guarded account deletion, and optional server-side WhatsApp notifications. Field operations, commerce operations, and retailer ordering share the same `/` application shell and role-aware tab row. Retailer, salesperson, operations-staff, and administrator permissions use one Neon Auth username/password system; roles are additive, so a salesperson may also process orders without a second account. Deleting a commerce-only account revokes its access but retains historical order snapshots; administrator and salesperson identities remain managed from Team. There is no OTP login path and no Supabase runtime dependency.
 
@@ -94,7 +98,7 @@ The importer is dry-run-first and idempotent. It requires a temporary source ser
 - Next.js App Router with React and TypeScript
 - Tailwind CSS and local shadcn-derived UI primitives
 - Google Maps JavaScript API when configured, with MapLibre/OpenStreetMap transition fallback
-- Local GeoJSON outlines for Telangana and Andhra Pradesh
+- On-demand, cached local GeoJSON outlines for all 36 Indian states and union territories
 - On-demand postal PIN-boundary polygons for dealer PINs
 - SheetJS for browser-side spreadsheet parsing, plus JSON support
 - Tesseract.js and PDF.js for client-side image/PDF extraction with mandatory review
@@ -150,5 +154,7 @@ ports check
 Local verification, Vercel linkage, public deployment, and production readiness are separate states. The public deployment is a review artifact and not a shared system of record.
 
 ## Deployment
+
+Private source workbooks in `raw-data/` are excluded from Git and Vercel CLI uploads. `.vercelignore` also excludes environment secrets, local provider/agent state, outputs and build caches; public boundary assets remain included. Release from an explicitly reviewed source snapshot, never by broadly staging the workspace.
 
 Vercel is the selected host and the linked Neon resource uses the free plan in the Singapore region. `.vercel/` contains local provider linkage and remains ignored. Application migrations through `0008` are recorded in the configured Neon database, but the commerce changes have not been deployed and legacy Supabase data has not been recovered. The existing production deployment has verified sign-in/session protection, Google Maps rendering, and a live Google Routes request. Do not delete the old repository or call the commerce cutover data-complete until source counts, product images, retailer reconciliation, representative orders, and all four role journeys pass the documented gate.

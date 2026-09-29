@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { Minus, Package, Plus, RotateCcw, Search, ShoppingCart } from "lucide-react";
 import type { CommerceOrder, CommerceProduct } from "@/lib/commerce-contract";
+import { reorderCartItems } from "@/lib/commerce-reorder";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -118,20 +119,9 @@ export function ShopWorkspace({
   }
 
   function reorder(order: CommerceOrder) {
-    let added = 0;
-    setCart((current) => {
-      const updated = { ...current };
-      for (const item of order.items) {
-        const variant = variants.get(item.variantId);
-        if (!variant || variant.stockStatus === "out_of_stock") continue;
-        updated[item.variantId] = Math.max(
-          item.quantity,
-          variant.minimumOrderQuantity,
-        );
-        added += 1;
-      }
-      return updated;
-    });
+    const additions = reorderCartItems(order.items, variants);
+    const added = Object.keys(additions).length;
+    setCart((current) => ({ ...current, ...additions }));
     setMessage(
       added
         ? `${added} item${added === 1 ? "" : "s"} added from order #${order.id}.`

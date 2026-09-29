@@ -26,3 +26,30 @@ test("loads a missing 2025 PIN polygon from the 2024 layer", async () => {
     globalThis.fetch = previous;
   }
 });
+
+test("server lookup uses backup during primary failure without inventing geometry", async () => {
+  const previous = globalThis.fetch;
+  globalThis.fetch = async (input) => String(input).includes("IN_Postal_Code_Boundaries_2024")
+    ? Response.json({features:[{type:"Feature",properties:{pin_code:"599997",state:"Telangana"},
+      geometry:{type:"Polygon",coordinates:[[[78,17],[79,17],[79,18],[78,17]]]}}]})
+    : new Response("down", {status:500});
+  try { assert.equal((await fetchPinBoundaries(["599997"])).get("599997")?.length,1); }
+  finally { globalThis.fetch = previous; }
+});
+
+test("server retains successful primary geometry but fails closed for unresolved backup requests", async () => {
+  const previous = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async (input) => {
+    calls++;
+    return String(input).includes("IN_Postal_Code_Boundaries_2024") ? new Response("down",{status:500})
+      : Response.json({features:[{type:"Feature",properties:{pin_code:"599996",state:"Telangana"},
+        geometry:{type:"Polygon",coordinates:[[[78,17],[79,17],[79,18],[78,17]]]}}]});
+  };
+  try {
+    await assert.rejects(fetchPinBoundaries(["599996","599995"]));
+    calls = 0;
+    assert.equal((await fetchPinBoundaries(["599996"])).get("599996")?.length,1);
+    assert.equal(calls,0);
+  } finally { globalThis.fetch = previous; }
+});

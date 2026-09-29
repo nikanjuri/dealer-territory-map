@@ -138,6 +138,14 @@ import {
 } from "@/lib/dealer-api";
 import { authClient } from "@/lib/auth-client";
 import { INDIAN_STATES, normalizeIndianState } from "@/lib/indian-states";
+import {
+  highlightedStateBoundaryCodes,
+  EMPTY_STATE_BOUNDARIES,
+  loadStateBoundaries,
+  selectStateBoundaries,
+  stateBoundaryFeatureId,
+  type StateBoundaryData,
+} from "@/lib/state-boundaries";
 import type { AppSession, SalespersonAccount } from "@/lib/access-contract";
 import {
   ApiRequestError,
@@ -478,6 +486,7 @@ function MapLibreTerritoryMap({
   onSelect,
   focusRequest,
   boundaries,
+  stateBoundaries,
   active,
 }: {
   dealers: DealerSummary[];
@@ -485,6 +494,7 @@ function MapLibreTerritoryMap({
   onSelect: (id: number) => void;
   focusRequest: DealerSummary | null;
   boundaries: PincodeBoundaryData;
+  stateBoundaries: StateBoundaryData;
   active: boolean;
 }) {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -492,7 +502,8 @@ function MapLibreTerritoryMap({
   const onSelectRef = useRef(onSelect);
   const dealersRef = useRef(dealers);
   const fittedInitialCoverageRef = useRef(false);
-  const [ready, setReady] = useState(false);
+  // A revision ensures rebuilt maps refresh their layers after Fast Refresh.
+  const [ready, setReady] = useState(0);
 
   useEffect(() => {
     onSelectRef.current = onSelect;
@@ -543,7 +554,7 @@ function MapLibreTerritoryMap({
       map.on("load", () => {
         map?.addSource("states", {
           type: "geojson",
-          data: "/region-boundaries.geojson",
+          data: EMPTY_STATE_BOUNDARIES,
         });
         map?.addLayer({
           id: "states-fill",
@@ -628,7 +639,7 @@ function MapLibreTerritoryMap({
         map?.on("mouseleave", "dealer-points", () => {
           if (map) map.getCanvas().style.cursor = "";
         });
-        setReady(true);
+        setReady((revision) => revision + 1);
       });
     });
 
@@ -638,6 +649,11 @@ function MapLibreTerritoryMap({
       mapRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (!active || !ready || !mapRef.current) return;
+    (mapRef.current.getSource("states") as GeoJSONSource)?.setData(stateBoundaries);
+  }, [active, ready, stateBoundaries]);
 
   useEffect(() => {
     if (!active || !ready || !mapRef.current) return;
@@ -701,38 +717,7 @@ function MapLibreTerritoryMap({
         style={{ position: "absolute", inset: 0 }}
         aria-label="Dealer territory map"
       />
-      <Popover>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            className="absolute left-3 top-16 inline-flex min-h-9 items-center gap-1.5 rounded-full border border-white/75 bg-white/94 px-3 text-[11px] font-semibold text-[#5f5b57] shadow-[0_8px_24px_rgba(37,42,68,0.13)] backdrop-blur transition-[transform,background-color] active:scale-[0.97] hover:bg-white sm:bottom-5 sm:left-5 sm:top-auto"
-            aria-label="Show coverage information"
-          >
-            <Info className="h-3.5 w-3.5" />
-            Coverage info
-          </button>
-        </PopoverTrigger>
-        <PopoverContent
-          side="top"
-          align="start"
-          sideOffset={8}
-          className="w-[min(320px,calc(100vw-24px))] rounded-xl border-white/70 bg-white/96 p-4 text-[#252a30] shadow-[0_16px_42px_rgba(37,42,68,0.2)] backdrop-blur"
-        >
-          <p className="text-sm font-semibold">PIN-code coverage</p>
-          <p className="mt-1.5 text-xs leading-5 text-[#6f6a65]">
-            Colored polygons contain dealers assigned to one salesperson. A
-            slate polygon with an amber border is a shared PIN containing dealers
-            assigned to multiple salespeople.
-          </p>
-          <div className="mt-3 flex items-center gap-2 border-t border-[#e9e2d8] pt-3 text-xs text-[#5f5b57]">
-            <span className="h-3 w-3 shrink-0 rounded-sm border border-[#b45309] bg-[#7d8582]" />
-            Shared PIN · multiple salespeople
-          </div>
-          <p className="mt-2 text-[11px] leading-4 text-[#6f6a65]">
-            Boundary source: Department of Posts via OGD India / Esri India
-          </p>
-        </PopoverContent>
-      </Popover>
+      <CoverageInfo />
     </div>
   );
 }
@@ -745,6 +730,7 @@ function GoogleTerritoryMap({
   apiKey,
   onProviderError,
   boundaries,
+  stateBoundaries,
   active,
 }: {
   dealers: DealerSummary[];
@@ -754,6 +740,7 @@ function GoogleTerritoryMap({
   apiKey: string;
   onProviderError: () => void;
   boundaries: PincodeBoundaryData;
+  stateBoundaries: StateBoundaryData;
   active: boolean;
 }) {
   const mapId = resolveGoogleMapsMapId(
@@ -769,11 +756,11 @@ function GoogleTerritoryMap({
   const markerSignaturesRef = useRef(new Map<number, string>());
   const selectedMarkerRef = useRef<number | null>(null);
   const markerLibraryRef = useRef<google.maps.MarkerLibrary | null>(null);
-  const [stateBoundaries, setStateBoundaries] = useState<MapData | null>(null);
   const onSelectRef = useRef(onSelect);
   const dealersRef = useRef(dealers);
   const fittedInitialCoverageRef = useRef(false);
-  const [ready, setReady] = useState(false);
+  // A boolean remains true across Fast Refresh and can strand detached markers.
+  const [ready, setReady] = useState(0);
 
   useEffect(() => {
     onSelectRef.current = onSelect;
@@ -782,21 +769,6 @@ function GoogleTerritoryMap({
   useEffect(() => {
     dealersRef.current = dealers;
   }, [dealers]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void fetch("/region-boundaries.geojson", { signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) throw new Error("State boundaries failed to load.");
-        return response.json() as Promise<MapData>;
-      })
-      .then(setStateBoundaries)
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        toast.error("State boundaries could not be loaded.");
-      });
-    return () => controller.abort();
-  }, []);
 
   useEffect(() => {
     let active = true;
@@ -830,7 +802,7 @@ function GoogleTerritoryMap({
           if (dealer) onSelectRef.current(dealer.id);
         });
         mapRef.current = map;
-        setReady(true);
+        setReady((revision) => revision + 1);
       })
       .catch(() => {
         if (!active) return;
@@ -858,7 +830,7 @@ function GoogleTerritoryMap({
     if (!active || !ready || !map) return;
 
     const desired = [
-      ...(stateBoundaries?.features ?? []).map((feature, index) => ({ id: `state-${index}`, feature, layerKind: "state" })),
+      ...stateBoundaries.features.map((feature) => ({ id: stateBoundaryFeatureId(feature), feature, layerKind: "state" })),
       ...makeCoverageData(boundaries, dealers).features.map((feature, index) => ({ id: `coverage-${feature.properties.pincode}-${index}`, feature, layerKind: "coverage" })),
     ];
     const desiredIds = new Set(desired.map((entry) => entry.id));
@@ -881,11 +853,13 @@ function GoogleTerritoryMap({
           strokeColor: "#53605b",
           strokeOpacity: 0.75,
           strokeWeight: 1.5,
+          zIndex: 0,
           clickable: false,
         };
       }
       return {
         fillColor: String(feature.getProperty("color") ?? "#a9b0ad"),
+        zIndex: 1,
         fillOpacity: 0.46,
         strokeColor: String(feature.getProperty("outlineColor") ?? "#53605b"),
         strokeOpacity: 0.95,
@@ -1050,12 +1024,23 @@ function CoverageInfo() {
           polygon with an amber border is a shared PIN containing dealers assigned
           to multiple salespeople.
         </p>
+        <p className="mt-2 text-xs leading-5 text-[#6f6a65]">
+          State highlights appear with more than 50 visible dealers, or when you
+          select a state with matching dealers. They are neutral geographic context,
+          not salesperson ownership or coverage across an entire state. Dealer
+          pins and colored PIN areas remain visible below this threshold.
+        </p>
         <div className="mt-3 flex items-center gap-2 border-t border-[#e9e2d8] pt-3 text-xs text-[#5f5b57]">
           <span className="h-3 w-3 shrink-0 rounded-sm border border-[#b45309] bg-[#7d8582]" />
           Shared PIN · multiple salespeople
         </div>
         <p className="mt-2 text-[11px] leading-4 text-[#6f6a65]">
           Boundary source: Department of Posts via OGD India / Esri India
+        </p>
+        <p className="mt-2 text-[11px] leading-4 text-[#6f6a65]">
+          State outlines: <a className="underline underline-offset-2" href="https://www.geoboundaries.org/" target="_blank" rel="noreferrer">geoBoundaries</a>,
+          {" "}<a className="underline underline-offset-2" href="https://github.com/datameet/maps" target="_blank" rel="noreferrer">DataMeet / Election Commission of India</a>
+          {" "}(<a className="underline underline-offset-2" href="https://creativecommons.org/licenses/by/2.5/in/" target="_blank" rel="noreferrer">CC BY 2.5 IN</a>).
         </p>
       </PopoverContent>
     </Popover>
@@ -1064,6 +1049,7 @@ function CoverageInfo() {
 
 function TerritoryMap(props: {
   dealers: DealerSummary[];
+  selectedState: StateFilter;
   selectedId: number | null;
   onSelect: (id: number) => void;
   focusRequest: DealerSummary | null;
@@ -1073,9 +1059,26 @@ function TerritoryMap(props: {
   const [providerFailed, setProviderFailed] = useState(false);
   const handleProviderError = useMemo(() => () => setProviderFailed(true), []);
   const [boundaries, setBoundaries] = useState(cachedPincodeBoundaries);
-  const [boundaryError, setBoundaryError] = useState(false);
+  const [pinResult, setPinResult] = useState({ key: "", unavailablePins: 0 });
+  const [retryingBoundaries, setRetryingBoundaries] = useState(false);
   const [retryBoundaries, setRetryBoundaries] = useState(0);
   const pinKey = useMemo(() => [...new Set(props.dealers.map((dealer) => dealer.pincode))].sort().join(","), [props.dealers]);
+  const unavailablePins = pinResult.key === pinKey ? pinResult.unavailablePins : 0;
+  const boundaryError = unavailablePins > 0;
+  const stateKey = useMemo(() => highlightedStateBoundaryCodes(props.dealers, props.selectedState).join(","), [props.dealers, props.selectedState]);
+  const [stateResult, setStateResult] = useState({ key: "", data: EMPTY_STATE_BOUNDARIES, failedCodes: [] as string[] });
+  // Remove out-of-scope highlights immediately, even while new geometry is loading.
+  const stateBoundaries = useMemo(() => selectStateBoundaries(stateResult.data, stateKey ? stateKey.split(",") : []), [stateResult.data, stateKey]);
+  const stateBoundaryError = stateResult.key === stateKey && stateResult.failedCodes.length > 0;
+
+  useEffect(() => {
+    if (!props.active) return;
+    let current = true;
+    void loadStateBoundaries(stateKey ? stateKey.split(",") : []).then((result) => {
+      if (current) setStateResult({ key: stateKey, ...result });
+    });
+    return () => { current = false; };
+  }, [props.active, stateKey, retryBoundaries]);
 
   useEffect(() => {
     if (!props.active) return;
@@ -1091,9 +1094,16 @@ function TerritoryMap(props: {
           (updated) => { if (current) setBoundaries((previous) => mergeBoundaries(previous, updated)); },
           controller.signal,
         );
-        if (current) setBoundaryError(result.failedBatches > 0);
+        if (current) {
+          setPinResult({ key: pinKey, unavailablePins: result.unavailablePins });
+          setRetryingBoundaries(false);
+        }
       } catch {
-        if (current) setBoundaryError(true);
+        if (current) {
+          const cachedPins = new Set(cachedPincodeBoundaries().features.map((feature) => String(feature.properties.pin_code)));
+          setPinResult({ key: pinKey, unavailablePins: (pinKey ? pinKey.split(",") : []).filter((pin) => !cachedPins.has(pin)).length });
+          setRetryingBoundaries(false);
+        }
       }
     }
     void load();
@@ -1103,28 +1113,33 @@ function TerritoryMap(props: {
     };
   }, [pinKey, props.active, retryBoundaries]);
 
-  const boundaryNotice = boundaryError ? (
+  const boundaryNotice = boundaryError || stateBoundaryError ? (
     <button
       type="button"
-      className="absolute bottom-4 left-4 z-10 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-amber-800 shadow-sm"
+      className="absolute bottom-4 left-4 z-10 min-h-11 max-w-[calc(100%-32px)] rounded-lg bg-white px-3 py-2 text-left text-xs font-semibold text-amber-800 shadow-sm disabled:cursor-wait sm:bottom-20"
+      disabled={retryingBoundaries}
+      aria-live="polite"
+      aria-label={boundaryError ? `Retry unavailable PIN boundaries (${unavailablePins})` : "Retry unavailable state outlines"}
       onClick={() => {
-        setBoundaryError(false);
+        setRetryingBoundaries(true);
         setRetryBoundaries((value) => value + 1);
       }}
     >
-      Some PIN boundaries could not load. Retry
+      {boundaryError ? `${unavailablePins} PIN ${unavailablePins === 1 ? "area" : "areas"} unavailable. Dealer pins remain visible.` : "Some state outlines are unavailable."}
+      {boundaryError && stateBoundaryError ? " Some state outlines are also unavailable." : ""}
+      {retryingBoundaries ? " Retrying…" : " Retry"}
     </button>
   ) : null;
 
   if (apiKey && !providerFailed) {
     return (
       <div className="relative h-full">
-        <GoogleTerritoryMap {...props} boundaries={boundaries} apiKey={apiKey} onProviderError={handleProviderError} />
+        <GoogleTerritoryMap {...props} boundaries={boundaries} stateBoundaries={stateBoundaries} apiKey={apiKey} onProviderError={handleProviderError} />
         {boundaryNotice}
       </div>
     );
   }
-  return <div className="relative h-full"><MapLibreTerritoryMap {...props} boundaries={boundaries} />{boundaryNotice}</div>;
+  return <div className="relative h-full"><MapLibreTerritoryMap {...props} boundaries={boundaries} stateBoundaries={stateBoundaries} />{boundaryNotice}</div>;
 }
 
 function AddDealerDialog({
@@ -2982,6 +2997,11 @@ function DealerDirectory({
   canManage: boolean;
 }) {
   const [editingDealer, setEditingDealer] = useState<Dealer | null>(null);
+  const editRequest = useRef(0);
+  useEffect(() => () => {
+    // A detail response must not open an editor after leaving this workspace.
+    editRequest.current += 1;
+  }, [active]);
   const [deletingDealer, setDeletingDealer] = useState<DealerSummary | null>(null);
   const [pagination, setPagination] = useState({ revision: -1, page: 1 });
   const [pageResult, setPageResult] = useState<{ dealers: DealerSummary[]; total: number; key: string } | null>(null);
@@ -3032,10 +3052,12 @@ function DealerDirectory({
   const pageSize = 100;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   async function startEditingDealer(dealer: DealerSummary) {
+    const request = ++editRequest.current;
     try {
-      setEditingDealer(await fetchDealerDetail(dealer.id));
+      const detail = await fetchDealerDetail(dealer.id);
+      if (request === editRequest.current) setEditingDealer(detail);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Dealer details could not be loaded.");
+      if (request === editRequest.current) toast.error(error instanceof Error ? error.message : "Dealer details could not be loaded.");
     }
   }
 
@@ -3314,12 +3336,12 @@ function DealerDirectory({
           </div>
         ) : null}
       </div>
-      {canManage && editingDealer ? (
+      {active && canManage && editingDealer ? (
         <EditDealerDialog
           key={editingDealer.id}
           dealer={editingDealer}
           salespeople={filters.salespeople}
-          onClose={() => setEditingDealer(null)}
+          onClose={() => { editRequest.current += 1; setEditingDealer(null); }}
           onUpdate={onUpdate}
         />
       ) : null}
@@ -3380,6 +3402,7 @@ export default function Home() {
   const router = useRouter();
   const [dealers, setDealers] = useState<DealerSummary[]>([]);
   const [session, setSession] = useState<AppSession | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
   const [team, setTeam] = useState<SalespersonAccount[]>([]);
   const [commerce, setCommerce] = useState<CommerceWorkspaceBootstrap | null>(null);
   const [shop, setShop] = useState<ShopWorkspaceBootstrap | null>(null);
@@ -4126,32 +4149,48 @@ export default function Home() {
           <button
             type="button"
             className="grid h-11 w-11 place-items-center rounded-xl text-white/70 transition-[background-color,color,transform] hover:bg-white/10 hover:text-white active:scale-[0.96]"
-            aria-label="Sign out"
-            title="Sign out"
+            aria-label={signingOut ? "Signing out…" : "Sign out"}
+            title={signingOut ? "Signing out…" : "Sign out"}
+            disabled={signingOut}
+            aria-busy={signingOut}
             onClick={async () => {
-              if ("indexedDB" in window && session?.userId) {
-                try {
-                  const { pendingVisits, clearPendingVisits } = await import("@/lib/offline-visits");
-                  const pending = await pendingVisits(session.userId);
-                  if (pending.length && !window.confirm(`${pending.length} visit updates have not synced. Sign out and discard them?`)) return;
-                  await clearPendingVisits(session.userId);
-                } catch {
-                  toast.error("Could not clear this device’s pending visit updates. Try again.");
+              if (signingOut) return;
+              setSigningOut(true);
+              try {
+                if ("indexedDB" in window && session?.userId) {
+                  try {
+                    const { pendingVisits, clearPendingVisits } = await import("@/lib/offline-visits");
+                    const pending = await pendingVisits(session.userId);
+                    if (pending.length && !window.confirm(`${pending.length} visit updates have not synced. Sign out and discard them?`)) return;
+                    await clearPendingVisits(session.userId);
+                  } catch {
+                    toast.error("Could not clear this device’s pending visit updates. Try again.");
+                    return;
+                  }
+                }
+                for (const timeout of pendingDealerDeletes.current.values()) window.clearTimeout(timeout);
+                pendingDealerDeletes.current.clear();
+                if (session?.userId) {
+                  try { sessionStorage.removeItem(`dealer-ops-order-retry:${session.userId}`); } catch {}
+                }
+                invalidateWorkspaceBootstraps();
+                const result = await authClient.signOut();
+                if (result.error) {
+                  toast.error("Sign out could not be completed. Please try again.");
                   return;
                 }
+                router.replace("/auth/sign-in");
+                router.refresh();
+              } catch {
+                toast.error("Sign out could not be completed. Please try again.");
+              } finally {
+                setSigningOut(false);
               }
-              for (const timeout of pendingDealerDeletes.current.values()) window.clearTimeout(timeout);
-              pendingDealerDeletes.current.clear();
-              if (session?.userId) {
-                try { sessionStorage.removeItem(`dealer-ops-order-retry:${session.userId}`); } catch {}
-              }
-              invalidateWorkspaceBootstraps();
-              await authClient.signOut();
-              router.replace("/auth/sign-in");
-              router.refresh();
             }}
           >
-            <LogOut className="h-4 w-4" aria-hidden="true" />
+            {signingOut
+              ? <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+              : <LogOut className="h-4 w-4" aria-hidden="true" />}
           </button>
         </div>
       </header>
@@ -4404,6 +4443,7 @@ export default function Home() {
         >
           <TerritoryMap
             dealers={mapDealers}
+            selectedState={stateFilter}
             active={workspaceView === "map"}
             selectedId={selectedId}
             onSelect={(id) => {

@@ -62,7 +62,7 @@ test("a failed boundary batch remains retryable while a successful batch stays c
     const url = new URL(String(input));
     const requested = [...(url.searchParams.get("where") ?? "").matchAll(/'(\d{6})'/g)].map((match) => match[1]);
     if (failLast && requested.includes(pins[30])) return new Response(null, { status: 503 });
-    return Response.json({ type: "FeatureCollection", features: requested.map((pin) => ({ type: "Feature", properties: { pin_code: pin }, geometry: { type: "Polygon", coordinates: [] } })) });
+    return Response.json({ type: "FeatureCollection", features: requested.map((pin) => ({ type: "Feature", properties: { pin_code: pin }, geometry: { type: "Polygon", coordinates: [[[78,17],[79,17],[79,18],[78,17]]] } })) });
   };
   try {
     const batches: number[] = [];
@@ -72,7 +72,7 @@ test("a failed boundary batch remains retryable while a successful batch stays c
     failLast = false;
     const retry = await loadMissingPincodeBoundaries(pins, (data) => batches.push(data.features.length));
     assert.equal(retry.failedBatches, 0);
-    assert.equal(calls, 3);
+    assert.equal(calls, 4); // Two primary batches, failed-batch backup, then only that PIN on retry.
     assert.deepEqual(batches, [30, 1]);
   } finally {
     globalThis.fetch = original;
