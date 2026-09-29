@@ -6,14 +6,16 @@ Unified field operations and dealer ordering.
 
 ## Release QA — 2026-09-29
 
-- [ ] TASK-001: Complete isolated authenticated release QA, then deploy the reviewed main snapshot.
+- [x] TASK-001: Complete isolated authenticated release QA, then deploy the reviewed main snapshot.
   - Outcome: Release the map resilience changes and matching operations/commerce code without test writes to the shared production database.
   - Acceptance: Exact-address route save/visit/admin readback, offline replay, retailer checkout/reorder, operations-only and dual-role journeys pass; live deployment is reverified.
   - Verification: `npm run verify`, representative authenticated browser journeys, reviewed upload contents, Vercel production smoke checks.
-  - Evidence: Final verification passes 142 tests, lint, TypeScript and production build. All 81 isolated authenticated API assertions and representative mobile/desktop browser route, visit, checkout/reorder and additive-role journeys pass. Real backend connection loss exercised IndexedDB queue/replay and terminal conflict recovery; physical-device offline events remain outside this run. Both disposable QA branches were deleted, the original local environment is restored and 13 live application-table baselines are unchanged. Main push and hosted promotion remain pending. See `docs/audits/RELEASE_QA_2026-09-29.md`.
+  - Evidence: Application commit `073b5b9` pushed to main; Vercel deployment `dpl_7x5k6ppUM22BsAqHTWtCaQHEJ4Fi` is Ready and promoted to the canonical domain. Final verification passes 142 tests, lint, TypeScript and production build. All 81 isolated authenticated API assertions, representative mobile/desktop route/visit/order/additive-role journeys and 103 canonical production smoke assertions pass. Production administrator/salesperson views and real Google Routes credentials were checked. Real backend connection loss exercised IndexedDB queue/replay and terminal conflict recovery; physical-device offline events remain outside this run. Both disposable QA branches were deleted, the original local environment is restored and 13 live application-table baselines are unchanged. Upstream PIN availability and legacy commerce parity remain explicit limits. See `docs/audits/RELEASE_QA_2026-09-29.md`.
 - [x] Exclude private source workbooks and local credentials/provider state from Git and Vercel CLI release packaging. Source workbooks remain on disk.
 
 ## 2026-09-29 dealer-state map context
+
+The local checkpoints below are historical. Their code shipped in the release above; live MapLibre fallback was subsequently exercised in isolated mobile QA, and all 36 state assets passed canonical production reads.
 
 - [x] Harden PIN-boundary loading against partial/provider failures, preserve primary results, use fallback during primary outages, validate real geometry and add a bounded 30-day public-only IndexedDB cache. Count unresolved PIN areas, retain dealer markers, scope warnings to current filters and disable concurrent retries. Add persistence, timeout, cancellation, malformed-response and fail-closed server-lookup tests. Local automated and browser evidence: `docs/audits/PIN_BOUNDARY_RESILIENCE_2026-09-29.md`; no push/deployment or hosted data changes.
 
@@ -34,7 +36,8 @@ Unified field operations and dealer ordering.
 - [x] Require a selected and reviewed Google place for new address-level pins; typed-only addresses may be explicitly saved with a PIN-level pin.
 - [x] Batch route-stop reads and expose `Server-Timing` for workspace and directory requests.
 - [x] Apply migration `0008` to the approved existing Neon database (2026-09-28). Verify an application-schema backup restored into disposable Postgres 18, compare already-present `0006`/`0007` schema before reconciling their missing journal entries, preserve all application-table data, and verify a repeated Drizzle migration is a no-op. Development and production share the target; authenticated role QA remains required before deploying the matching code. See `docs/audits/DATABASE_MIGRATION_2026-09-28.md`.
-- [ ] Run authenticated administrator, salesperson, and retailer desktop/mobile QA with representative data and measure real workspace timings. On 2026-09-28, existing administrator sign-in, all five tab reads, mobile identity, directory search, and edit-form loading were checked. Salesperson sign-in, own-dealer UI, a cross-owner dealer read denial, mobile identity and route prerequisites were also checked after corrected credentials were supplied. Retailer/catalog fixtures remain missing; road-routing previews, route/visit/order writes and offline replay are not cleared. See `docs/audits/AUTHENTICATED_QA_2026-09-28.md`.
+- [x] Run authenticated administrator, salesperson, retailer and operations desktop/mobile QA with representative isolated fixtures. The 2026-09-29 release record supersedes the earlier missing-fixture and unverified-write boundaries in `docs/audits/AUTHENTICATED_QA_2026-09-28.md`.
+- [ ] Establish quantified workspace latency and performance budgets under representative device/network conditions; this release did not claim a measured load-time improvement.
 - [x] Push the authorized application snapshot to `codex/operations-checkpoint-2026-09-28` before further checks, excluding source workbooks and secrets. A subsequent authenticated Google road preview and six isolated persistence/storage test groups passed; no live routes, visits or orders were saved. See `docs/audits/POST_PUSH_CHECKS_2026-09-28.md`.
 - [x] Fix and reverify mobile route planning/review clipping at 320, 390 and 768 px (2026-09-29). Fix user-scoped outbox clearing, acknowledgment races, transaction abort handling, Google lookup errors and changed-routing-input save validation. All 108 tests and six isolated persistence groups pass; see `docs/audits/MAIN_QA_2026-09-29.md`.
 - [x] Complete isolated authenticated browser route/visit, connection-loss/replay/conflict, retailer checkout/reorder and operations/additive-role journeys. Development shares production's database; fixture writes were isolated to disposable database/Auth copies, both deleted afterward. Physical-device offline-event testing and optional notification delivery are not claimed. See `docs/audits/RELEASE_QA_2026-09-29.md`.
@@ -167,9 +170,9 @@ Complete the retailer-ordering cutover to Neon, then validate the hardened road-
 - [x] Commerce contract tests cover category validation, multiple images, product variants, order quantities/statuses, and account activation.
 - [x] All commerce migrations through `0005` are applied to the configured Neon database.
 - [ ] Legacy Supabase source and Neon target counts, image bytes, totals, and representative order histories match after the one-time import.
-- [ ] Retailer, operations-staff, dual-role salesperson/staff, and administrator commerce journeys are visually and behaviorally verified.
-- [ ] A salesperson completes a fresh exact-address route end to end in the local UI without changing production records.
-- [ ] The Vercel preview and production deployments are reverified after territory-model changes.
+- [x] Retailer, operations-staff, dual-role salesperson/staff, and administrator commerce journeys are visually and behaviorally verified in disposable fixtures; legacy migrated-data parity remains open.
+- [x] A salesperson completes a fresh synthetic exact-address route end to end in the isolated local UI without changing production records.
+- [x] The staged production deployment and canonical origin are reverified after territory-map changes; no application fixture writes were repeated in production.
 
 ## Risks
 
